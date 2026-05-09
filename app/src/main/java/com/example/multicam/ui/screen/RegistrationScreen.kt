@@ -3,10 +3,12 @@ package com.example.multicam.ui.screen
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -17,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.time.LocalTime
 
+private enum class AuthMode { REGISTER, LOGIN }
+
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun RegistrationScreen(
@@ -26,6 +30,7 @@ fun RegistrationScreen(
 ) {
     val context = LocalContext.current
 
+    var mode     by remember { mutableStateOf(AuthMode.REGISTER) }
     var username by remember { mutableStateOf("") }
     var email    by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -40,11 +45,14 @@ fun RegistrationScreen(
         }
     }
 
-    // Navigate on success
-    LaunchedEffect(viewModel.state) {
-        if (viewModel.state is AuthState.Success) {
-            onLoginSuccess()
-        }
+    // Reset stale Success state left over from a previous session (e.g. guest login),
+    // then watch for a *new* Success via snapshotFlow so we don't skip the screen.
+    LaunchedEffect(Unit) {
+        viewModel.reset()
+        snapshotFlow { viewModel.state }
+            .collect { state ->
+                if (state is AuthState.Success) onLoginSuccess()
+            }
     }
 
     val isLoading = viewModel.state is AuthState.Loading
@@ -66,7 +74,10 @@ fun RegistrationScreen(
         Spacer(Modifier.height(8.dp))
 
         Text(
-            text      = "Добро пожаловать в MultiCam,\nпройдите регистрацию",
+            text      = if (mode == AuthMode.REGISTER)
+                "Добро пожаловать в MultiCam,\nпройдите регистрацию"
+            else
+                "Рады снова вас видеть,\nвойдите в аккаунт",
             style     = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color     = MaterialTheme.colorScheme.onSurfaceVariant
@@ -74,41 +85,73 @@ fun RegistrationScreen(
 
         Spacer(Modifier.height(32.dp))
 
-        OutlinedTextField(
-            value          = username,
-            onValueChange  = { username = it; viewModel.clearError() },
-            label          = { Text("Имя пользователя") },
-            modifier       = Modifier.fillMaxWidth(),
-            singleLine     = true,
-            enabled        = !isLoading
-        )
+        // ── Tab switcher ──────────────────────────────────────────────────────
+        TabRow(
+            selectedTabIndex = if (mode == AuthMode.REGISTER) 0 else 1,
+            modifier         = Modifier.fillMaxWidth()
+        ) {
+            Tab(
+                selected = mode == AuthMode.REGISTER,
+                onClick  = {
+                    mode = AuthMode.REGISTER
+                    viewModel.clearError()
+                },
+                text = { Text("Регистрация") }
+            )
+            Tab(
+                selected = mode == AuthMode.LOGIN,
+                onClick  = {
+                    mode = AuthMode.LOGIN
+                    viewModel.clearError()
+                },
+                text = { Text("Войти") }
+            )
+        }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(24.dp))
 
-        OutlinedTextField(
-            value          = email,
-            onValueChange  = { email = it; viewModel.clearError() },
-            label          = { Text("Почта") },
-            modifier       = Modifier.fillMaxWidth(),
-            singleLine     = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            enabled        = !isLoading
-        )
+        // ── Fields ────────────────────────────────────────────────────────────
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .animateContentSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Username — only in register mode
+            AnimatedVisibility(visible = mode == AuthMode.REGISTER) {
+                OutlinedTextField(
+                    value         = username,
+                    onValueChange = { username = it; viewModel.clearError() },
+                    label         = { Text("Имя пользователя") },
+                    modifier      = Modifier.fillMaxWidth(),
+                    singleLine    = true,
+                    enabled       = !isLoading
+                )
+            }
 
-        Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value           = email,
+                onValueChange   = { email = it; viewModel.clearError() },
+                label           = { Text("Почта") },
+                modifier        = Modifier.fillMaxWidth(),
+                singleLine      = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                enabled         = !isLoading
+            )
 
-        OutlinedTextField(
-            value                  = password,
-            onValueChange          = { password = it; viewModel.clearError() },
-            label                  = { Text("Пароль") },
-            modifier               = Modifier.fillMaxWidth(),
-            singleLine             = true,
-            visualTransformation   = PasswordVisualTransformation(),
-            keyboardOptions        = KeyboardOptions(keyboardType = KeyboardType.Password),
-            enabled                = !isLoading
-        )
+            OutlinedTextField(
+                value                = password,
+                onValueChange        = { password = it; viewModel.clearError() },
+                label                = { Text("Пароль") },
+                modifier             = Modifier.fillMaxWidth(),
+                singleLine           = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions      = KeyboardOptions(keyboardType = KeyboardType.Password),
+                enabled              = !isLoading
+            )
+        }
 
-        // Error message
+        // ── Error ─────────────────────────────────────────────────────────────
         AnimatedVisibility(visible = errorMsg != null) {
             Text(
                 text     = errorMsg ?: "",
@@ -120,25 +163,35 @@ fun RegistrationScreen(
 
         Spacer(Modifier.height(28.dp))
 
+        // ── Primary action button ─────────────────────────────────────────────
         Button(
-            onClick  = { viewModel.register(username, email, password) },
+            onClick = {
+                if (mode == AuthMode.REGISTER)
+                    viewModel.register(username, email, password)
+                else
+                    viewModel.login(email, password)
+            },
             modifier = Modifier.fillMaxWidth(),
             shape    = MaterialTheme.shapes.medium,
             enabled  = !isLoading
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
+                    modifier    = Modifier.size(18.dp),
                     strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary
+                    color       = MaterialTheme.colorScheme.onPrimary
                 )
             } else {
-                Text("Зарегистрироваться", modifier = Modifier.padding(vertical = 8.dp))
+                Text(
+                    text     = if (mode == AuthMode.REGISTER) "Зарегистрироваться" else "Войти",
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
             }
         }
 
         Spacer(Modifier.height(12.dp))
 
+        // ── Guest ─────────────────────────────────────────────────────────────
         TextButton(
             onClick  = { viewModel.loginAsGuest(context) },
             enabled  = !isLoading

@@ -2,6 +2,7 @@ package com.example.multicam.api
 
 import com.example.multicam.api.dto.OCRResponse
 import com.example.multicam.api.dto.SaveRequest
+import com.example.multicam.api.dto.SavedResultDto
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -9,21 +10,35 @@ import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.converter.scalars.ScalarsConverterFactory
-import retrofit2.http.Body
-import retrofit2.http.Multipart
-import retrofit2.http.POST
-import retrofit2.http.Part
+import retrofit2.http.*
 import java.util.concurrent.TimeUnit
 
 interface BackendApi {
+
     @Multipart
     @POST("api/ocr/process")
     suspend fun processImage(
         @Part image: MultipartBody.Part
     ): OCRResponse
 
+    /**
+     * Сохраняет лайк. Возвращает сохранённую запись с id —
+     * клиент использует его для последующего удаления.
+     */
     @POST("api/save/like")
-    suspend fun saveLike(@Body request: SaveRequest): Response<String>
+    suspend fun saveLike(@Body request: SaveRequest): Response<SavedResultDto>
+
+    /**
+     * Удаляет лайк по id записи в БД.
+     */
+    @DELETE("api/save/like/{id}")
+    suspend fun deleteLike(@Path("id") id: Long): Response<String>
+
+    /**
+     * Возвращает все лайки текущего пользователя.
+     */
+    @GET("api/save/likes/all")
+    suspend fun getLikes(): Response<List<SavedResultDto>>
 }
 
 object RetrofitClient {

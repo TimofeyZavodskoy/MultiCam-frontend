@@ -17,5 +17,7 @@ data class FavoriteItem(
     val calories: Int? = null,
     val proteins: Int? = null,
     val fats: Int? = null,
-    val carbs: Int? = null
+    val carbs: Int? = null,
+    /** id записи в БД на бекенде. null пока не синкнули. */
+    val backendId: Long? = null
 )

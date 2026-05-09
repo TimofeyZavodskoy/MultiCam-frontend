@@ -11,7 +11,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.multicam.api.RetrofitClient
 import com.example.multicam.api.dto.DetectedObj
 import com.example.multicam.api.dto.OCRResponse
-import com.example.multicam.api.dto.SaveRequest
 import com.example.multicam.api.dto.SearchResult
 import com.example.multicam.ui.component.NutritionData
 import com.example.multicam.util.compressImage
@@ -40,11 +39,11 @@ class ImageViewModel : ViewModel() {
     var searchResult by mutableStateOf<List<SearchResult>>(emptyList())
         private set
 
-    // Raw response — used for backend like sync
+    /** Полный сырой ответ — передаётся в FavoritesViewModel при лайке */
     var rawResponse by mutableStateOf<OCRResponse?>(null)
         private set
 
-    // Unique ID for the current result — used to track like state
+    /** Уникальный id текущего результата — используется для отслеживания состояния лайка */
     var currentResultId by mutableStateOf<String?>(null)
         private set
 
@@ -70,8 +69,6 @@ class ImageViewModel : ViewModel() {
                 val part = MultipartBody.Part.createFormData("image", "photo.jpg", requestBody)
 
                 val response = RetrofitClient.api.processImage(part)
-
-                // Store full raw response for backend sync
                 rawResponse = response
 
                 detections   = response.detections
@@ -108,21 +105,6 @@ class ImageViewModel : ViewModel() {
                 error = "Ошибка: ${e.localizedMessage}"
             } finally {
                 isLoading = false
-            }
-        }
-    }
-
-    /** Best-effort backend sync when user likes a result. Non-critical — failures are silently logged. */
-    fun syncLikeToBackend(category: String) {
-        val resp = rawResponse ?: return
-        viewModelScope.launch {
-            try {
-                RetrofitClient.api.saveLike(SaveRequest(clientJson = resp, category = category))
-                Log.d("ImageViewModel", "Like synced to backend (category=$category)")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w("ImageViewModel", "Like backend sync skipped (non-critical): ${e.message}")
             }
         }
     }

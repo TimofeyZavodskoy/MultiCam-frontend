@@ -47,29 +47,26 @@ import com.example.multicam.ui.component.NutritionCard
 import com.example.multicam.ui.component.ProductLinksCard
 import kotlinx.coroutines.launch
 
-// ── Category detection ────────────────────────────────────────────────────────
+// ── Category / title helpers ──────────────────────────────────────────────────
 
 private fun detectCategory(vm: ImageViewModel): FavoriteCategory = when {
-    vm.nutritionData != null          -> FavoriteCategory.FOOD
-    vm.searchResult.isNotEmpty()      -> FavoriteCategory.OBJECT_SEARCH
+    vm.nutritionData != null                                  -> FavoriteCategory.FOOD
+    vm.searchResult.isNotEmpty()                              -> FavoriteCategory.OBJECT_SEARCH
     vm.detections?.isNotEmpty() == true && vm.result == null -> FavoriteCategory.IMAGES
     vm.result?.let { text ->
         text.contains("=") || text.contains("²") || text.contains("√") ||
                 text.contains("∫") || text.contains("∑") || text.contains("∞")
-    } == true -> FavoriteCategory.MATH
-    else -> FavoriteCategory.TEXT
+    } == true                                                 -> FavoriteCategory.MATH
+    else                                                      -> FavoriteCategory.TEXT
 }
 
 private fun buildTitle(vm: ImageViewModel): String = when {
-    vm.nutritionData != null ->
-        "🍽 ${vm.nutritionData!!.calories} ккал"
-    vm.searchResult.isNotEmpty() ->
-        "🔍 ${vm.detections?.firstOrNull()?.label ?: "Объект"}"
+    vm.nutritionData != null    -> "🍽 ${vm.nutritionData!!.calories} ккал"
+    vm.searchResult.isNotEmpty() -> "🔍 ${vm.detections?.firstOrNull()?.label ?: "Объект"}"
     vm.detections?.isNotEmpty() == true ->
         "📸 ${vm.detections!!.firstOrNull()?.label ?: "Изображение"}"
-    else ->
-        vm.result?.lines()?.firstOrNull { it.isNotBlank() }
-            ?.take(50)?.trim() ?: "Ответ"
+    else -> vm.result?.lines()?.firstOrNull { it.isNotBlank() }
+        ?.take(50)?.trim() ?: "Ответ"
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -83,10 +80,10 @@ fun MainScreen(
     favoritesVm: FavoritesViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
-    val context       = LocalContext.current
-    val drawerState   = rememberDrawerState(DrawerValue.Closed)
-    val scope         = rememberCoroutineScope()
-    val listState     = rememberLazyListState()
+    val context     = LocalContext.current
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope       = rememberCoroutineScope()
+    val listState   = rememberLazyListState()
 
     var selectedUri        by remember { mutableStateOf<Uri?>(null) }
     var isReasoningVisible by remember { mutableStateOf(false) }
@@ -103,27 +100,20 @@ fun MainScreen(
 
     ModalNavigationDrawer(
         drawerState   = drawerState,
-        drawerContent = {
-            ModalDrawerSheet { FavoritesDrawerContent(vm = favoritesVm) }
-        }
+        drawerContent = { ModalDrawerSheet { FavoritesDrawerContent(vm = favoritesVm) } }
     ) {
         Scaffold(
             modifier = modifier,
             topBar   = {
                 TopAppBar(
-                    title = {
-                        Text("MultiCam", fontWeight = FontWeight.Bold)
-                    },
+                    title = { Text("MultiCam", fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Default.Menu, contentDescription = "Избранное")
                         }
                     },
                     actions = {
-                        // ── Guest banner ──────────────────────────────────────
-                        if (isGuest) {
-                            GuestBadge(onClick = onRegisterClick)
-                        }
+                        if (isGuest) GuestBadge(onClick = onRegisterClick)
                     }
                 )
             }
@@ -171,13 +161,13 @@ fun MainScreen(
                                 ?.takeIf { it.isNotEmpty() && intrinsic != null }
                                 ?.let { dets ->
                                     Canvas(modifier = Modifier.fillMaxSize()) {
-                                        val scaleX   = size.width  / intrinsic!!.width
-                                        val scaleY   = size.height / intrinsic.height
-                                        val scale    = minOf(scaleX, scaleY)
+                                        val scaleX    = size.width  / intrinsic!!.width
+                                        val scaleY    = size.height / intrinsic.height
+                                        val scale     = minOf(scaleX, scaleY)
                                         val renderedW = intrinsic.width  * scale
                                         val renderedH = intrinsic.height * scale
-                                        val ox       = (size.width  - renderedW) / 2f
-                                        val oy       = (size.height - renderedH) / 2f
+                                        val ox        = (size.width  - renderedW) / 2f
+                                        val oy        = (size.height - renderedH) / 2f
 
                                         dets.forEach { det ->
                                             val b  = det.bbox
@@ -202,8 +192,8 @@ fun MainScreen(
                             Text("Выбрать фото")
                         }
                         Button(
-                            onClick  = { selectedUri?.let { viewModel.analyzeImage(context, it) } },
-                            enabled  = selectedUri != null && !viewModel.isLoading
+                            onClick = { selectedUri?.let { viewModel.analyzeImage(context, it) } },
+                            enabled = selectedUri != null && !viewModel.isLoading
                         ) {
                             Text("Анализировать")
                         }
@@ -225,7 +215,7 @@ fun MainScreen(
                     }
 
                     else -> {
-                        // Nutrition card
+                        // ── Nutrition card ────────────────────────────────────
                         viewModel.nutritionData?.let { nutrition ->
                             item {
                                 NutritionCard(
@@ -239,7 +229,7 @@ fun MainScreen(
                                         } else {
                                             val cat = FavoriteCategory.FOOD
                                             favoritesVm.add(
-                                                FavoriteItem(
+                                                item = FavoriteItem(
                                                     id        = id,
                                                     timestamp = System.currentTimeMillis(),
                                                     category  = cat,
@@ -248,16 +238,17 @@ fun MainScreen(
                                                     proteins  = nutrition.proteins,
                                                     fats      = nutrition.fats,
                                                     carbs     = nutrition.carbs
-                                                )
+                                                ),
+                                                rawResponse = viewModel.rawResponse,
+                                                category    = cat
                                             )
-                                            viewModel.syncLikeToBackend(cat.name)
                                         }
                                     }
                                 )
                             }
                         }
 
-                        // Text result card
+                        // ── Text result card ──────────────────────────────────
                         viewModel.result?.let { resultText ->
                             val parts     = resultText.split("#### Ход мыслей")
                             val solution  = parts[0]
@@ -278,27 +269,27 @@ fun MainScreen(
                                         } else {
                                             val cat = detectCategory(viewModel)
                                             favoritesVm.add(
-                                                FavoriteItem(
-                                                    id           = id,
-                                                    timestamp    = System.currentTimeMillis(),
-                                                    category     = cat,
-                                                    title        = buildTitle(viewModel),
-                                                    resultText   = resultText,
-                                                    calories     = viewModel.nutritionData?.calories,
-                                                    proteins     = viewModel.nutritionData?.proteins,
-                                                    fats         = viewModel.nutritionData?.fats,
-                                                    carbs        = viewModel.nutritionData?.carbs
-                                                )
+                                                item = FavoriteItem(
+                                                    id         = id,
+                                                    timestamp  = System.currentTimeMillis(),
+                                                    category   = cat,
+                                                    title      = buildTitle(viewModel),
+                                                    resultText = resultText,
+                                                    calories   = viewModel.nutritionData?.calories,
+                                                    proteins   = viewModel.nutritionData?.proteins,
+                                                    fats       = viewModel.nutritionData?.fats,
+                                                    carbs      = viewModel.nutritionData?.carbs
+                                                ),
+                                                rawResponse = viewModel.rawResponse,
+                                                category    = cat
                                             )
-                                            // Sync to backend (best-effort, non-blocking)
-                                            viewModel.syncLikeToBackend(cat.name)
                                         }
                                     }
                                 )
                             }
                         }
 
-                        // Detections-only card (no text, no nutrition)
+                        // ── Detections-only card ──────────────────────────────
                         if (viewModel.nutritionData == null && viewModel.result == null) {
                             viewModel.detections?.takeIf { it.isNotEmpty() }?.let { dets ->
                                 item {
@@ -313,14 +304,15 @@ fun MainScreen(
                                             } else {
                                                 val cat = FavoriteCategory.IMAGES
                                                 favoritesVm.add(
-                                                    FavoriteItem(
+                                                    item = FavoriteItem(
                                                         id        = id,
                                                         timestamp = System.currentTimeMillis(),
                                                         category  = cat,
                                                         title     = buildTitle(viewModel)
-                                                    )
+                                                    ),
+                                                    rawResponse = viewModel.rawResponse,
+                                                    category    = cat
                                                 )
-                                                viewModel.syncLikeToBackend(cat.name)
                                             }
                                         }
                                     )
@@ -328,7 +320,7 @@ fun MainScreen(
                             }
                         }
 
-                        // Product links
+                        // ── Product links ─────────────────────────────────────
                         viewModel.searchResult.takeIf { it.isNotEmpty() }?.let { links ->
                             item {
                                 ProductLinksCard(
@@ -344,57 +336,51 @@ fun MainScreen(
     }
 }
 
-// ── Guest badge ───────────────────────────────────────────────────────────────
+// ── Reusable composables ──────────────────────────────────────────────────────
 
 @Composable
 private fun GuestBadge(onClick: () -> Unit) {
     Surface(
-        onClick      = onClick,
-        shape        = RoundedCornerShape(20.dp),
-        color        = MaterialTheme.colorScheme.primaryContainer,
-        tonalElevation = 2.dp,
-        modifier     = Modifier.padding(end = 8.dp)
+        onClick         = onClick,
+        shape           = RoundedCornerShape(20.dp),
+        color           = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation  = 2.dp,
+        modifier        = Modifier.padding(end = 8.dp)
     ) {
         Row(
-            verticalAlignment    = Alignment.CenterVertically,
+            verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
         ) {
             Icon(
                 imageVector        = Icons.Default.Person,
                 contentDescription = null,
-                tint   = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(14.dp)
+                tint               = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier           = Modifier.size(14.dp)
             )
             Text(
-                text     = "Регистрация",
-                fontSize = 12.sp,
+                text       = "Регистрация",
+                fontSize   = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color    = MaterialTheme.colorScheme.onPrimaryContainer
+                color      = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
     }
 }
 
-// ── Like button with bounce animation ────────────────────────────────────────
-
 @Composable
 private fun LikeButton(isLiked: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val scale by animateFloatAsState(
-        targetValue    = if (isLiked) 1.25f else 1f,
-        animationSpec  = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label          = "heartScale"
+        targetValue   = if (isLiked) 1.25f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label         = "heartScale"
     )
     val tint by animateColorAsState(
-        targetValue   = if (isLiked) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-        label         = "heartTint"
+        targetValue = if (isLiked) Color(0xFFE53935)
+        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+        label = "heartTint"
     )
-
-    IconButton(
-        onClick  = onClick,
-        enabled  = enabled,
-        modifier = Modifier.scale(scale)
-    ) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.scale(scale)) {
         Icon(
             imageVector        = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
             contentDescription = if (isLiked) "Убрать из избранного" else "В избранное",
@@ -402,8 +388,6 @@ private fun LikeButton(isLiked: Boolean, enabled: Boolean, onClick: () -> Unit) 
         )
     }
 }
-
-// ── Result card ───────────────────────────────────────────────────────────────
 
 @Composable
 private fun ResultCard(
@@ -415,10 +399,7 @@ private fun ResultCard(
     isLiked: Boolean,
     onLike: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape    = RoundedCornerShape(12.dp)
-    ) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier              = Modifier.fillMaxWidth(),
@@ -428,26 +409,17 @@ private fun ResultCard(
                 Box(modifier = Modifier.weight(1f)) {
                     MarkdownText(markdown = solution)
                 }
-                LikeButton(
-                    isLiked = isLiked,
-                    enabled = currentResultId != null,
-                    onClick = onLike
-                )
+                LikeButton(isLiked = isLiked, enabled = currentResultId != null, onClick = onLike)
             }
 
             reasoning?.let {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onToggleReasoning),
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onToggleReasoning),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        "Ход решения",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Text("Ход решения", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary)
                     Text(if (isReasoningVisible) "▲" else "▼")
                 }
                 AnimatedVisibility(visible = isReasoningVisible) {
@@ -458,8 +430,6 @@ private fun ResultCard(
     }
 }
 
-// ── Detections card ───────────────────────────────────────────────────────────
-
 @Composable
 private fun DetectionsCard(
     detections: List<String>,
@@ -467,26 +437,16 @@ private fun DetectionsCard(
     isLiked: Boolean,
     onLike: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape    = RoundedCornerShape(12.dp)
-    ) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier              = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically
             ) {
-                Text(
-                    "Обнаруженные объекты",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                LikeButton(
-                    isLiked = isLiked,
-                    enabled = currentResultId != null,
-                    onClick = onLike
-                )
+                Text("Обнаруженные объекты", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary)
+                LikeButton(isLiked = isLiked, enabled = currentResultId != null, onClick = onLike)
             }
             Spacer(Modifier.height(8.dp))
             detections.forEach { label -> Text("• $label") }
