@@ -28,10 +28,12 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
     var state by mutableStateOf<AuthState>(AuthState.Idle)
         private set
 
-    /** Сохраняет токен в память и в SharedPreferences */
-    private fun persistToken(token: String) {
+    private fun persistToken(token: String, isGuest: Boolean) {
         RetrofitClient.authToken = token
-        prefs.edit().putString("auth_token", token).apply()
+        prefs.edit()
+            .putString("auth_token", token)
+            .putBoolean("is_guest", isGuest)
+            .apply()
     }
 
     fun register(username: String, email: String, password: String) {
@@ -42,7 +44,6 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             state = AuthState.Loading
             try {
-                // 1. Регистрация — бэк возвращает "Signup successful"
                 val regResp = RetrofitClient.authApi.register(
                     RegisterRequest(username, email, password)
                 )
@@ -50,26 +51,46 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
                     state = AuthState.Error("Ошибка регистрации: ${regResp.code()}")
                     return@launch
                 }
-
-                // 2. Логин — бэк возвращает сырую JWT-строку
-                val loginResp = RetrofitClient.authApi.signin(
-                    LoginRequest(email, password)
-                )
-                if (loginResp.isSuccessful) {
-                    val token = loginResp.body()
-                    if (!token.isNullOrBlank()) {
-                        persistToken(token)
-                        state = AuthState.Success
-                    } else {
-                        state = AuthState.Error("Сервер вернул пустой токен")
-                    }
-                } else {
-                    state = AuthState.Error("Ошибка входа: ${loginResp.code()}")
-                }
-
+                doLogin(email, password, isGuest = false)
             } catch (e: Exception) {
                 state = AuthState.Error(e.localizedMessage ?: "Ошибка сети")
             }
+        }
+    }
+
+    fun login(email: String, password: String) {
+        if (email.isBlank() || password.isBlank()) {
+            state = AuthState.Error("Введите почту и пароль")
+            return
+        }
+        viewModelScope.launch {
+            state = AuthState.Loading
+            try {
+                doLogin(email, password, isGuest = false)
+            } catch (e: Exception) {
+                state = AuthState.Error(e.localizedMessage ?: "Ошибка сети")
+            }
+        }
+    }
+
+    private suspend fun doLogin(email: String, password: String, isGuest: Boolean) {
+        val loginResp = RetrofitClient.authApi.signin(LoginRequest(email, password))
+        if (loginResp.isSuccessful) {
+            val token = loginResp.body()
+            if (!token.isNullOrBlank()) {
+                persistToken(token, isGuest)
+                state = AuthState.Success
+            } else {
+                state = AuthState.Error("Сервер вернул пустой токен")
+            }
+        } else {
+            state = AuthState.Error(
+                when (loginResp.code()) {
+                    401  -> "Неверная почта или пароль"
+                    404  -> "Аккаунт не найден"
+                    else -> "Ошибка входа: ${loginResp.code()}"
+                }
+            )
         }
     }
 
@@ -80,10 +101,9 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
                 val uuid = getDeviceUuid(context)
                 val resp = RetrofitClient.authApi.registerGuest(GuestRequest(uuid))
                 if (resp.isSuccessful) {
-                    // Бэк возвращает JWT-строку напрямую
                     val token = resp.body()
                     if (!token.isNullOrBlank()) {
-                        persistToken(token)
+                        persistToken(token, isGuest = true)
                         state = AuthState.Success
                     } else {
                         state = AuthState.Error("Сервер вернул пустой токен")
@@ -99,5 +119,10 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearError() {
         if (state is AuthState.Error) state = AuthState.Idle
+    }
+
+    /** Сбрасываем состояние при повторном показе экрана (после logout / смены аккаунта). */
+    fun reset() {
+        state = AuthState.Idle
     }
 }

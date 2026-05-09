@@ -40,11 +40,25 @@ class MainActivity : ComponentActivity() {
                 var loggedIn by remember { mutableStateOf(wasLoggedIn) }
 
                 if (loggedIn) {
-                    MainScreen()
+                    val isGuest = prefs.getBoolean("is_guest", false)
+
+                    MainScreen(
+                        isGuest = isGuest,
+                        onRegisterClick = {
+                            // Clear session and show registration screen
+                            prefs.edit()
+                                .putBoolean("is_logged_in", false)
+                                .remove("auth_token")
+                                .remove("is_guest")
+                                .apply()
+                            RetrofitClient.authToken = null
+                            loggedIn = false
+                        }
+                    )
                 } else {
                     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                         RegistrationScreen(
-                            modifier      = Modifier.padding(innerPadding),
+                            modifier       = Modifier.padding(innerPadding),
                             onLoginSuccess = {
                                 prefs.edit().putBoolean("is_logged_in", true).apply()
                                 loggedIn = true

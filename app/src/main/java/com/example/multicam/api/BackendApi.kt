@@ -1,12 +1,15 @@
 package com.example.multicam.api
 
 import com.example.multicam.api.dto.OCRResponse
+import com.example.multicam.api.dto.SaveRequest
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.converter.scalars.ScalarsConverterFactory
+import retrofit2.http.Body
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
@@ -18,10 +21,12 @@ interface BackendApi {
     suspend fun processImage(
         @Part image: MultipartBody.Part
     ): OCRResponse
+
+    @POST("api/save/like")
+    suspend fun saveLike(@Body request: SaveRequest): Response<String>
 }
 
 object RetrofitClient {
-    // Токен хранится здесь в рантайме; MainActivity грузит его из SharedPreferences при старте
     var authToken: String? = null
 
     private val httpClient = OkHttpClient.Builder()

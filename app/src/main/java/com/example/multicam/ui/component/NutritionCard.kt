@@ -2,20 +2,29 @@ package com.example.multicam.ui.component
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -26,9 +35,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val ProteinColor = Color(0xFF4FC3F7) // голубой
-private val FatColor     = Color(0xFFFFB74D) // оранжевый
-private val CarbColor    = Color(0xFF81C784) // зелёный
+private val ProteinColor = Color(0xFF4FC3F7)
+private val FatColor     = Color(0xFFFFB74D)
+private val CarbColor    = Color(0xFF81C784)
 
 data class NutritionData(
     val calories: Int,
@@ -38,14 +47,18 @@ data class NutritionData(
 )
 
 @Composable
-fun NutritionCard(data: NutritionData) {
+fun NutritionCard(
+    data: NutritionData,
+    isLiked: Boolean = false,
+    likeEnabled: Boolean = false,
+    onLike: () -> Unit = {}
+) {
     val total = (data.proteins + data.fats + data.carbs).toFloat().coerceAtLeast(1f)
 
     val proteinSweep = (data.proteins / total) * 360f
     val fatSweep     = (data.fats / total) * 360f
     val carbSweep    = (data.carbs / total) * 360f
 
-    // Анимация заполнения диаграммы
     val animProgress = remember { Animatable(0f) }
     LaunchedEffect(data) {
         animProgress.snapTo(0f)
@@ -55,6 +68,13 @@ fun NutritionCard(data: NutritionData) {
         )
     }
     val progress = animProgress.value
+
+    // Like button bounce animation
+    val likeScale by animateFloatAsState(
+        targetValue   = if (isLiked) 1.25f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label         = "likeScale"
+    )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -67,7 +87,7 @@ fun NutritionCard(data: NutritionData) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Заголовок + калории
+            // ── Header: title + calories badge + like button ──────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -79,16 +99,37 @@ fun NutritionCard(data: NutritionData) {
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
                 )
-                CaloriesBadge(calories = data.calories)
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    CaloriesBadge(calories = data.calories)
+
+                    // ── Like button ───────────────────────────────────────────
+                    IconButton(
+                        onClick  = onLike,
+                        enabled  = likeEnabled,
+                        modifier = Modifier.scale(likeScale)
+                    ) {
+                        Icon(
+                            imageVector = if (isLiked) Icons.Default.Favorite
+                            else Icons.Default.FavoriteBorder,
+                            contentDescription = if (isLiked) "Убрать из избранного"
+                            else "В избранное",
+                            tint = if (isLiked) Color(0xFFE53935)
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        )
+                    }
+                }
             }
 
-            // Диаграмма + легенда
+            // ── Donut chart + legend ──────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(24.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Круговая диаграмма (пончик)
                 Box(
                     modifier = Modifier.size(120.dp),
                     contentAlignment = Alignment.Center
@@ -99,7 +140,6 @@ fun NutritionCard(data: NutritionData) {
                         val arcSize = Size(size.width - strokeWidth, size.height - strokeWidth)
                         val topLeft = Offset(inset, inset)
 
-                        // Фоновый круг
                         drawArc(
                             color = Color.White.copy(alpha = 0.08f),
                             startAngle = 0f,
@@ -112,7 +152,6 @@ fun NutritionCard(data: NutritionData) {
 
                         var startAngle = -90f
 
-                        // Белки
                         val pSweep = proteinSweep * progress
                         if (pSweep > 0.5f) {
                             drawArc(
@@ -127,7 +166,6 @@ fun NutritionCard(data: NutritionData) {
                         }
                         startAngle += proteinSweep
 
-                        // Жиры
                         val fSweep = fatSweep * progress
                         if (fSweep > 0.5f) {
                             drawArc(
@@ -142,7 +180,6 @@ fun NutritionCard(data: NutritionData) {
                         }
                         startAngle += fatSweep
 
-                        // Углеводы
                         val cSweep = carbSweep * progress
                         if (cSweep > 0.5f) {
                             drawArc(
@@ -157,7 +194,6 @@ fun NutritionCard(data: NutritionData) {
                         }
                     }
 
-                    // Текст в центре
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = "${data.calories}",
@@ -173,27 +209,26 @@ fun NutritionCard(data: NutritionData) {
                     }
                 }
 
-                // Легенда — макронутриенты
                 Column(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     MacroRow(
-                        color = ProteinColor,
-                        label = "Белки",
-                        value = data.proteins,
+                        color   = ProteinColor,
+                        label   = "Белки",
+                        value   = data.proteins,
                         percent = if (total > 0) (data.proteins / total * 100).toInt() else 0
                     )
                     MacroRow(
-                        color = FatColor,
-                        label = "Жиры",
-                        value = data.fats,
+                        color   = FatColor,
+                        label   = "Жиры",
+                        value   = data.fats,
                         percent = if (total > 0) (data.fats / total * 100).toInt() else 0
                     )
                     MacroRow(
-                        color = CarbColor,
-                        label = "Углеводы",
-                        value = data.carbs,
+                        color   = CarbColor,
+                        label   = "Углеводы",
+                        value   = data.carbs,
                         percent = if (total > 0) (data.carbs / total * 100).toInt() else 0
                     )
                 }
@@ -225,21 +260,18 @@ private fun MacroRow(color: Color, label: String, value: Int, percent: Int) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Цветной кружок-индикатор
         Box(
             modifier = Modifier
                 .size(10.dp)
                 .clip(CircleShape)
                 .background(color)
         )
-        // Название
         Text(
             text = label,
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
             modifier = Modifier.weight(1f)
         )
-        // Граммы + процент
         Text(
             text = "${value}г",
             fontSize = 13.sp,

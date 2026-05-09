@@ -10,6 +10,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.multicam.api.RetrofitClient
 import com.example.multicam.api.dto.DetectedObj
+import com.example.multicam.api.dto.OCRResponse
+import com.example.multicam.api.dto.SaveRequest
 import com.example.multicam.api.dto.SearchResult
 import com.example.multicam.ui.component.NutritionData
 import com.example.multicam.util.compressImage
@@ -38,6 +40,10 @@ class ImageViewModel : ViewModel() {
     var searchResult by mutableStateOf<List<SearchResult>>(emptyList())
         private set
 
+    // Raw response — used for backend like sync
+    var rawResponse by mutableStateOf<OCRResponse?>(null)
+        private set
+
     // Unique ID for the current result — used to track like state
     var currentResultId by mutableStateOf<String?>(null)
         private set
@@ -53,6 +59,7 @@ class ImageViewModel : ViewModel() {
             result = null
             detections = null
             nutritionData = null
+            rawResponse = null
             currentResultId = null
 
             try {
@@ -64,8 +71,11 @@ class ImageViewModel : ViewModel() {
 
                 val response = RetrofitClient.api.processImage(part)
 
-                detections    = response.detections
-                searchResult  = response.searchResults ?: emptyList()
+                // Store full raw response for backend sync
+                rawResponse = response
+
+                detections   = response.detections
+                searchResult = response.searchResults ?: emptyList()
 
                 val cal  = response.calories
                 val pro  = response.proteins
@@ -85,7 +95,6 @@ class ImageViewModel : ViewModel() {
                             ?: response.content
                             ?: response.description
 
-                // Generate a stable ID for this result so the like button can track state
                 currentResultId = UUID.randomUUID().toString()
 
             } catch (e: SocketTimeoutException) {
@@ -99,6 +108,21 @@ class ImageViewModel : ViewModel() {
                 error = "Ошибка: ${e.localizedMessage}"
             } finally {
                 isLoading = false
+            }
+        }
+    }
+
+    /** Best-effort backend sync when user likes a result. Non-critical — failures are silently logged. */
+    fun syncLikeToBackend(category: String) {
+        val resp = rawResponse ?: return
+        viewModelScope.launch {
+            try {
+                RetrofitClient.api.saveLike(SaveRequest(clientJson = resp, category = category))
+                Log.d("ImageViewModel", "Like synced to backend (category=$category)")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("ImageViewModel", "Like backend sync skipped (non-critical): ${e.message}")
             }
         }
     }

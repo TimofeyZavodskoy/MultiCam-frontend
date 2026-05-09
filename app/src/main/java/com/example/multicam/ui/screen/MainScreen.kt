@@ -5,6 +5,10 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,11 +20,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -29,6 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
@@ -70,6 +77,8 @@ private fun buildTitle(vm: ImageViewModel): String = when {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
+    isGuest: Boolean = false,
+    onRegisterClick: () -> Unit = {},
     viewModel: ImageViewModel = viewModel(),
     favoritesVm: FavoritesViewModel = viewModel(),
     modifier: Modifier = Modifier
@@ -79,9 +88,9 @@ fun MainScreen(
     val scope         = rememberCoroutineScope()
     val listState     = rememberLazyListState()
 
-    var selectedUri          by remember { mutableStateOf<Uri?>(null) }
-    var isReasoningVisible   by remember { mutableStateOf(false) }
-    var imageIntrinsicSize   by remember { mutableStateOf<IntSize?>(null) }
+    var selectedUri        by remember { mutableStateOf<Uri?>(null) }
+    var isReasoningVisible by remember { mutableStateOf(false) }
+    var imageIntrinsicSize by remember { mutableStateOf<IntSize?>(null) }
 
     LaunchedEffect(selectedUri) { imageIntrinsicSize = null }
     LaunchedEffect(viewModel.error) {
@@ -108,6 +117,12 @@ fun MainScreen(
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Default.Menu, contentDescription = "Избранное")
+                        }
+                    },
+                    actions = {
+                        // ── Guest banner ──────────────────────────────────────
+                        if (isGuest) {
+                            GuestBadge(onClick = onRegisterClick)
                         }
                     }
                 )
@@ -137,11 +152,11 @@ fun MainScreen(
                     ) {
                         if (selectedUri != null) {
                             AsyncImage(
-                                model        = selectedUri,
+                                model              = selectedUri,
                                 contentDescription = null,
-                                modifier     = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit,
-                                onState      = { state ->
+                                modifier           = Modifier.fillMaxSize(),
+                                contentScale       = ContentScale.Fit,
+                                onState            = { state ->
                                     if (state is AsyncImagePainter.State.Success) {
                                         val sz = state.painter.intrinsicSize
                                         if (sz.width > 0 && sz.height > 0) {
@@ -212,7 +227,34 @@ fun MainScreen(
                     else -> {
                         // Nutrition card
                         viewModel.nutritionData?.let { nutrition ->
-                            item { NutritionCard(data = nutrition) }
+                            item {
+                                NutritionCard(
+                                    data        = nutrition,
+                                    isLiked     = favoritesVm.contains(viewModel.currentResultId ?: ""),
+                                    likeEnabled = viewModel.currentResultId != null,
+                                    onLike      = {
+                                        val id = viewModel.currentResultId ?: return@NutritionCard
+                                        if (favoritesVm.contains(id)) {
+                                            favoritesVm.remove(id)
+                                        } else {
+                                            val cat = FavoriteCategory.FOOD
+                                            favoritesVm.add(
+                                                FavoriteItem(
+                                                    id        = id,
+                                                    timestamp = System.currentTimeMillis(),
+                                                    category  = cat,
+                                                    title     = buildTitle(viewModel),
+                                                    calories  = nutrition.calories,
+                                                    proteins  = nutrition.proteins,
+                                                    fats      = nutrition.fats,
+                                                    carbs     = nutrition.carbs
+                                                )
+                                            )
+                                            viewModel.syncLikeToBackend(cat.name)
+                                        }
+                                    }
+                                )
+                            }
                         }
 
                         // Text result card
@@ -234,11 +276,12 @@ fun MainScreen(
                                         if (favoritesVm.contains(id)) {
                                             favoritesVm.remove(id)
                                         } else {
+                                            val cat = detectCategory(viewModel)
                                             favoritesVm.add(
                                                 FavoriteItem(
                                                     id           = id,
                                                     timestamp    = System.currentTimeMillis(),
-                                                    category     = detectCategory(viewModel),
+                                                    category     = cat,
                                                     title        = buildTitle(viewModel),
                                                     resultText   = resultText,
                                                     calories     = viewModel.nutritionData?.calories,
@@ -247,6 +290,8 @@ fun MainScreen(
                                                     carbs        = viewModel.nutritionData?.carbs
                                                 )
                                             )
+                                            // Sync to backend (best-effort, non-blocking)
+                                            viewModel.syncLikeToBackend(cat.name)
                                         }
                                     }
                                 )
@@ -266,14 +311,16 @@ fun MainScreen(
                                             if (favoritesVm.contains(id)) {
                                                 favoritesVm.remove(id)
                                             } else {
+                                                val cat = FavoriteCategory.IMAGES
                                                 favoritesVm.add(
                                                     FavoriteItem(
                                                         id        = id,
                                                         timestamp = System.currentTimeMillis(),
-                                                        category  = FavoriteCategory.IMAGES,
+                                                        category  = cat,
                                                         title     = buildTitle(viewModel)
                                                     )
                                                 )
+                                                viewModel.syncLikeToBackend(cat.name)
                                             }
                                         }
                                     )
@@ -297,18 +344,66 @@ fun MainScreen(
     }
 }
 
-// ── Sub-composables ───────────────────────────────────────────────────────────
+// ── Guest badge ───────────────────────────────────────────────────────────────
+
+@Composable
+private fun GuestBadge(onClick: () -> Unit) {
+    Surface(
+        onClick      = onClick,
+        shape        = RoundedCornerShape(20.dp),
+        color        = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 2.dp,
+        modifier     = Modifier.padding(end = 8.dp)
+    ) {
+        Row(
+            verticalAlignment    = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Icon(
+                imageVector        = Icons.Default.Person,
+                contentDescription = null,
+                tint   = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text     = "Регистрация",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color    = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
+
+// ── Like button with bounce animation ────────────────────────────────────────
 
 @Composable
 private fun LikeButton(isLiked: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, enabled = enabled) {
+    val scale by animateFloatAsState(
+        targetValue    = if (isLiked) 1.25f else 1f,
+        animationSpec  = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label          = "heartScale"
+    )
+    val tint by animateColorAsState(
+        targetValue   = if (isLiked) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+        label         = "heartTint"
+    )
+
+    IconButton(
+        onClick  = onClick,
+        enabled  = enabled,
+        modifier = Modifier.scale(scale)
+    ) {
         Icon(
             imageVector        = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
             contentDescription = if (isLiked) "Убрать из избранного" else "В избранное",
-            tint = if (isLiked) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            tint               = tint
         )
     }
 }
+
+// ── Result card ───────────────────────────────────────────────────────────────
 
 @Composable
 private fun ResultCard(
@@ -362,6 +457,8 @@ private fun ResultCard(
         }
     }
 }
+
+// ── Detections card ───────────────────────────────────────────────────────────
 
 @Composable
 private fun DetectionsCard(
