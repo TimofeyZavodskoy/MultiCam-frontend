@@ -6,6 +6,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.converter.scalars.ScalarsConverterFactory
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
@@ -20,15 +21,15 @@ interface BackendApi {
 }
 
 object RetrofitClient {
+    // Токен хранится здесь в рантайме; MainActivity грузит его из SharedPreferences при старте
     var authToken: String? = null
 
     private val httpClient = OkHttpClient.Builder()
         .addInterceptor { chain ->
-            val requestBuilder = chain.request().newBuilder()
-            authToken?.let {
-                requestBuilder.addHeader("Authorization", "Bearer $it")
-            }
-            chain.proceed(requestBuilder.build())
+            val request = chain.request().newBuilder().apply {
+                authToken?.let { addHeader("Authorization", "Bearer $it") }
+            }.build()
+            chain.proceed(request)
         }
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
@@ -40,6 +41,7 @@ object RetrofitClient {
 
     private val retrofit = Retrofit.Builder()
         .baseUrl("http://192.168.0.15:8080/")
+        .addConverterFactory(ScalarsConverterFactory.create())
         .addConverterFactory(GsonConverterFactory.create())
         .client(httpClient)
         .build()
@@ -47,4 +49,3 @@ object RetrofitClient {
     val api: BackendApi = retrofit.create(BackendApi::class.java)
     val authApi: AuthApi = retrofit.create(AuthApi::class.java)
 }
-

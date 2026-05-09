@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.example.multicam.api.RetrofitClient
 import com.example.multicam.ui.screen.MainScreen
 import com.example.multicam.ui.screen.RegistrationScreen
 import com.example.multicam.ui.theme.MultiCamTheme
@@ -26,15 +27,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val prefs      = getSharedPreferences("auth", Context.MODE_PRIVATE)
+        val prefs       = getSharedPreferences("auth", Context.MODE_PRIVATE)
         val wasLoggedIn = prefs.getBoolean("is_logged_in", false)
+
+        val savedToken = prefs.getString("auth_token", null)
+        if (!savedToken.isNullOrBlank()) {
+            RetrofitClient.authToken = savedToken
+        }
 
         setContent {
             MultiCamTheme {
                 var loggedIn by remember { mutableStateOf(wasLoggedIn) }
 
                 if (loggedIn) {
-                    // MainScreen manages its own Scaffold + TopAppBar + drawer
                     MainScreen()
                 } else {
                     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
