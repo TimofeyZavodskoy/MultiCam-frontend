@@ -37,7 +37,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MultiCamTheme {
-                var loggedIn by remember { mutableStateOf(wasLoggedIn) }
+                var loggedIn     by remember { mutableStateOf(wasLoggedIn) }
+                /**
+                 * true — пользователь нажал «Регистрация» будучи гостем.
+                 * В этом случае токен НЕ очищаем: он нужен для вызова /auth/upgrade.
+                 */
+                var upgradeMode  by remember { mutableStateOf(false) }
 
                 if (loggedIn) {
                     val isGuest = prefs.getBoolean("is_guest", false)
@@ -45,21 +50,34 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         isGuest = isGuest,
                         onRegisterClick = {
-                            // Clear session and show registration screen
+                            // Токен гостя остаётся в RetrofitClient — он нужен для апгрейда.
+                            // Только убираем флаг is_logged_in, чтобы перейти на экран регистрации.
                             prefs.edit()
                                 .putBoolean("is_logged_in", false)
-                                .remove("auth_token")
-                                .remove("is_guest")
                                 .apply()
-                            RetrofitClient.authToken = null
+                            upgradeMode = true
                             loggedIn = false
                         }
                     )
                 } else {
                     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                         RegistrationScreen(
-                            modifier       = Modifier.padding(innerPadding),
-                            onLoginSuccess = {
+                            modifier        = Modifier.padding(innerPadding),
+                            isGuestUpgrade  = upgradeMode,
+                            onCancelUpgrade = if (upgradeMode) {
+                                {
+                                    // Гость передумал — возвращаем его обратно без изменений
+                                    prefs.edit().putBoolean("is_logged_in", true).apply()
+                                    upgradeMode = false
+                                    loggedIn = true
+                                }
+                            } else null,
+                            onLoginSuccess  = {
+                                if (upgradeMode) {
+                                    // После апгрейда: is_guest уже false (persistToken в VM),
+                                    // просто снимаем режим и пускаем на главный экран.
+                                    upgradeMode = false
+                                }
                                 prefs.edit().putBoolean("is_logged_in", true).apply()
                                 loggedIn = true
                             }

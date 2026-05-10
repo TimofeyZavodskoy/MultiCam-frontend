@@ -36,6 +36,8 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
             .apply()
     }
 
+    // ── Регистрация нового аккаунта ───────────────────────────────────────────
+
     fun register(username: String, email: String, password: String) {
         if (username.isBlank() || email.isBlank() || password.isBlank()) {
             state = AuthState.Error("Заполните все поля")
@@ -57,6 +59,46 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    // ── Апгрейд гостевого аккаунта ────────────────────────────────────────────
+
+    /**
+     * Вызывается когда гость хочет зарегистрироваться.
+     * Гостевой JWT уже лежит в RetrofitClient.authToken —
+     * бекенд идентифицирует пользователя по нему и перезаписывает его данные.
+     */
+    fun upgrade(username: String, email: String, password: String) {
+        if (username.isBlank() || email.isBlank() || password.isBlank()) {
+            state = AuthState.Error("Заполните все поля")
+            return
+        }
+        viewModelScope.launch {
+            state = AuthState.Loading
+            try {
+                val resp = RetrofitClient.authApi.upgradeAccount(
+                    RegisterRequest(username, email, password)
+                )
+                when {
+                    resp.isSuccessful -> {
+                        val token = resp.body()
+                        if (!token.isNullOrBlank()) {
+                            persistToken(token, isGuest = false)
+                            state = AuthState.Success
+                        } else {
+                            state = AuthState.Error("Сервер вернул пустой токен")
+                        }
+                    }
+                    resp.code() == 409 -> state = AuthState.Error("Этот email уже занят")
+                    resp.code() == 401 -> state = AuthState.Error("Сессия истекла, войдите снова")
+                    else               -> state = AuthState.Error("Ошибка сервера: ${resp.code()}")
+                }
+            } catch (e: Exception) {
+                state = AuthState.Error(e.localizedMessage ?: "Ошибка сети")
+            }
+        }
+    }
+
+    // ── Вход ─────────────────────────────────────────────────────────────────
 
     fun login(email: String, password: String) {
         if (email.isBlank() || password.isBlank()) {
@@ -94,6 +136,8 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ── Гостевой вход ─────────────────────────────────────────────────────────
+
     fun loginAsGuest(context: Context) {
         viewModelScope.launch {
             state = AuthState.Loading
@@ -117,12 +161,6 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun clearError() {
-        if (state is AuthState.Error) state = AuthState.Idle
-    }
-
-    /** Сбрасываем состояние при повторном показе экрана (после logout / смены аккаунта). */
-    fun reset() {
-        state = AuthState.Idle
-    }
+    fun clearError() { if (state is AuthState.Error) state = AuthState.Idle }
+    fun reset()      { state = AuthState.Idle }
 }
