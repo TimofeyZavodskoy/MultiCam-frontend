@@ -1,3 +1,33 @@
+# Built artifacts
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+
+# Gradle files
+.gradle/
+build/
+
+# Android Studio local configuration file (contains local paths, etc)
+local.properties
+
+# Log files
+*.log
+
+# Android Studio / IntelliJ IDEA settings
+.idea/
 *.iml
 .gradle
 /local.properties
@@ -13,3 +43,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+Thumbs.db
+
+# Secrets
+signing/
