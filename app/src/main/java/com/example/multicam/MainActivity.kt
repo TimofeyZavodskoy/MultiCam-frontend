@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
         if (!savedToken.isNullOrBlank()) {
             RetrofitClient.authToken = savedToken
         }
-
+        RetrofitClient.appContext = this
         setContent {
             MultiCamTheme {
                 var loggedIn     by remember { mutableStateOf(wasLoggedIn) }
