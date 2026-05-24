@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Multicam"
+rootProject.name = "MultiCam"
 include(":app")

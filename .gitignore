@@ -29,11 +29,20 @@ local.properties
 # Android Studio / IntelliJ IDEA settings
 .idea/
 *.iml
-*.ipr
-*.iws
-
-# OS tools
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
 .DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
 Thumbs.db
 
 # Secrets
