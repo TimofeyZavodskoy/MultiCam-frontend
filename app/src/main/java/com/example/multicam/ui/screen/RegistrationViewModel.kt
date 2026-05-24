@@ -11,6 +11,7 @@ import com.example.multicam.api.RetrofitClient
 import com.example.multicam.api.dto.GuestRequest
 import com.example.multicam.api.dto.LoginRequest
 import com.example.multicam.api.dto.RegisterRequest
+import com.example.multicam.api.dto.TokenPair
 import com.example.multicam.sevice.getDeviceUuid
 import kotlinx.coroutines.launch
 
@@ -28,15 +29,16 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
     var state by mutableStateOf<AuthState>(AuthState.Idle)
         private set
 
-    private fun persistToken(token: String, isGuest: Boolean) {
-        RetrofitClient.authToken = token
+    private fun persistTokens(pair: TokenPair, isGuest: Boolean) {
+        RetrofitClient.authToken = pair.accessToken
         prefs.edit()
-            .putString("auth_token", token)
+            .putString("auth_token", pair.accessToken)
+            .putString("refresh_token", pair.refreshToken)
             .putBoolean("is_guest", isGuest)
             .apply()
     }
 
-    // ── Регистрация нового аккаунта ───────────────────────────────────────────
+    // ── Регистрация ───────────────────────────────────────────────────────────
 
     fun register(username: String, email: String, password: String) {
         if (username.isBlank() || email.isBlank() || password.isBlank()) {
@@ -53,52 +55,14 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
                     state = AuthState.Error("Ошибка регистрации: ${regResp.code()}")
                     return@launch
                 }
-                doLogin(email, password, isGuest = false)
+                doLogin(email, password)
             } catch (e: Exception) {
                 state = AuthState.Error(e.localizedMessage ?: "Ошибка сети")
             }
         }
     }
 
-    // ── Апгрейд гостевого аккаунта ────────────────────────────────────────────
-
-    /**
-     * Вызывается когда гость хочет зарегистрироваться.
-     * Гостевой JWT уже лежит в RetrofitClient.authToken —
-     * бекенд идентифицирует пользователя по нему и перезаписывает его данные.
-     */
-    fun upgrade(username: String, email: String, password: String) {
-        if (username.isBlank() || email.isBlank() || password.isBlank()) {
-            state = AuthState.Error("Заполните все поля")
-            return
-        }
-        viewModelScope.launch {
-            state = AuthState.Loading
-            try {
-                val resp = RetrofitClient.authApi.upgradeAccount(
-                    RegisterRequest(username, email, password)
-                )
-                when {
-                    resp.isSuccessful -> {
-                        val token = resp.body()
-                        if (!token.isNullOrBlank()) {
-                            persistToken(token, isGuest = false)
-                            state = AuthState.Success
-                        } else {
-                            state = AuthState.Error("Сервер вернул пустой токен")
-                        }
-                    }
-                    resp.code() == 409 -> state = AuthState.Error("Этот email уже занят")
-                    resp.code() == 401 -> state = AuthState.Error("Сессия истекла, войдите снова")
-                    else               -> state = AuthState.Error("Ошибка сервера: ${resp.code()}")
-                }
-            } catch (e: Exception) {
-                state = AuthState.Error(e.localizedMessage ?: "Ошибка сети")
-            }
-        }
-    }
-
-    // ── Вход ─────────────────────────────────────────────────────────────────
+    // ── Вход ──────────────────────────────────────────────────────────────────
 
     fun login(email: String, password: String) {
         if (email.isBlank() || password.isBlank()) {
@@ -108,29 +72,29 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             state = AuthState.Loading
             try {
-                doLogin(email, password, isGuest = false)
+                doLogin(email, password)
             } catch (e: Exception) {
                 state = AuthState.Error(e.localizedMessage ?: "Ошибка сети")
             }
         }
     }
 
-    private suspend fun doLogin(email: String, password: String, isGuest: Boolean) {
-        val loginResp = RetrofitClient.authApi.signin(LoginRequest(email, password))
-        if (loginResp.isSuccessful) {
-            val token = loginResp.body()
-            if (!token.isNullOrBlank()) {
-                persistToken(token, isGuest)
+    private suspend fun doLogin(email: String, password: String) {
+        val resp = RetrofitClient.authApi.signin(LoginRequest(email, password))
+        if (resp.isSuccessful) {
+            val pair = resp.body()
+            if (pair != null) {
+                persistTokens(pair, isGuest = false)
                 state = AuthState.Success
             } else {
-                state = AuthState.Error("Сервер вернул пустой токен")
+                state = AuthState.Error("Сервер вернул пустой ответ")
             }
         } else {
             state = AuthState.Error(
-                when (loginResp.code()) {
+                when (resp.code()) {
                     401  -> "Неверная почта или пароль"
                     404  -> "Аккаунт не найден"
-                    else -> "Ошибка входа: ${loginResp.code()}"
+                    else -> "Ошибка входа: ${resp.code()}"
                 }
             )
         }
@@ -145,18 +109,51 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
                 val uuid = getDeviceUuid(context)
                 val resp = RetrofitClient.authApi.registerGuest(GuestRequest(uuid))
                 if (resp.isSuccessful) {
-                    val token = resp.body()
-                    if (!token.isNullOrBlank()) {
-                        persistToken(token, isGuest = true)
+                    val pair = resp.body()
+                    if (pair != null) {
+                        persistTokens(pair, isGuest = true)
                         state = AuthState.Success
                     } else {
-                        state = AuthState.Error("Сервер вернул пустой токен")
+                        state = AuthState.Error("Сервер вернул пустой ответ")
                     }
                 } else {
                     state = AuthState.Error("Ошибка сервера: ${resp.code()}")
                 }
             } catch (e: Exception) {
                 state = AuthState.Error(e.localizedMessage ?: "Ошибка подключения")
+            }
+        }
+    }
+
+    // ── Апгрейд гостя ─────────────────────────────────────────────────────────
+
+    fun upgrade(username: String, email: String, password: String) {
+        if (username.isBlank() || email.isBlank() || password.isBlank()) {
+            state = AuthState.Error("Заполните все поля")
+            return
+        }
+        viewModelScope.launch {
+            state = AuthState.Loading
+            try {
+                val resp = RetrofitClient.authApi.upgradeAccount(
+                    RegisterRequest(username, email, password)
+                )
+                when {
+                    resp.isSuccessful -> {
+                        val pair = resp.body()
+                        if (pair != null) {
+                            persistTokens(pair, isGuest = false)
+                            state = AuthState.Success
+                        } else {
+                            state = AuthState.Error("Сервер вернул пустой ответ")
+                        }
+                    }
+                    resp.code() == 409 -> state = AuthState.Error("Этот email уже занят")
+                    resp.code() == 401 -> state = AuthState.Error("Сессия истекла, войдите снова")
+                    else               -> state = AuthState.Error("Ошибка сервера: ${resp.code()}")
+                }
+            } catch (e: Exception) {
+                state = AuthState.Error(e.localizedMessage ?: "Ошибка сети")
             }
         }
     }
