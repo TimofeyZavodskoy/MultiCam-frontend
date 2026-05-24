@@ -3,6 +3,8 @@ package com.example.multicam.model
 enum class FavoriteCategory(val displayName: String, val emoji: String) {
     FOOD("Еда", "🍽"),
     MATH("Математика", "🧮"),
+    PHYSICS("Физика", "⚛️"),
+    CHEMISTRY("Химия", "🧪"),
     TEXT("Текст", "📝"),
     OBJECT_SEARCH("Поиск объектов", "🔍"),
     IMAGES("Изображения", "📸")
@@ -18,6 +20,5 @@ data class FavoriteItem(
     val proteins: Int? = null,
     val fats: Int? = null,
     val carbs: Int? = null,
-    /** id записи в БД на бекенде. null пока не синкнули. */
     val backendId: Long? = null
 )

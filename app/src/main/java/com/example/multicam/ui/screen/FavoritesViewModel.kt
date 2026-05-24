@@ -175,11 +175,12 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
     private fun buildTitleFromOcr(ocr: OCRResponse?, cat: FavoriteCategory): String {
         if (ocr == null) return cat.displayName
         return when (cat) {
-            FavoriteCategory.FOOD         -> "🍽 ${ocr.calories ?: "?"} ккал"
+            FavoriteCategory.FOOD          -> "🍽 ${ocr.calories ?: "?"} ккал"
             FavoriteCategory.OBJECT_SEARCH -> "🔍 ${ocr.detections?.firstOrNull()?.label ?: "Объект"}"
-            FavoriteCategory.IMAGES       -> "📸 ${ocr.detections?.firstOrNull()?.label ?: "Изображение"}"
-            else -> (ocr.solution ?: ocr.result ?: ocr.content ?: ocr.description)
-                ?.lines()?.firstOrNull { it.isNotBlank() }?.take(50)?.trim() ?: cat.displayName
+            FavoriteCategory.IMAGES        -> "📸 ${ocr.detections?.firstOrNull()?.label ?: "Изображение"}"
+            FavoriteCategory.PHYSICS       -> "⚛️ ${ocr.result?.lines()?.firstOrNull { it.isNotBlank() }?.take(50)?.trim() ?: "Физика"}"
+            FavoriteCategory.CHEMISTRY     -> "🧪 ${ocr.result?.lines()?.firstOrNull { it.isNotBlank() }?.take(50)?.trim() ?: "Химия"}"
+            else -> ocr.result?.lines()?.firstOrNull { it.isNotBlank() }?.take(50)?.trim() ?: cat.displayName
         }
     }
 
