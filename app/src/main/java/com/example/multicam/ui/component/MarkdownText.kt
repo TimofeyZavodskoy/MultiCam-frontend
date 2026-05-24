@@ -21,7 +21,6 @@ fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
     val headingColor = intToHexColor(MaterialTheme.colorScheme.primary.toArgb())
     val codeColor    = intToHexColor(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f).toArgb())
 
-    // Передаём сырой markdown через base64 — никаких проблем с экранированием
     val htmlContent = remember(markdown, textColor, headingColor) {
         val base64 = Base64.encodeToString(markdown.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         buildHtml(base64, textColor, headingColor, codeColor)
@@ -40,6 +39,9 @@ fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
                 setBackgroundColor(Color.TRANSPARENT)
                 isFocusable = false
                 isFocusableInTouchMode = false
+                isHorizontalScrollBarEnabled = false
+                isVerticalScrollBarEnabled = false
+                overScrollMode = WebView.OVER_SCROLL_NEVER
                 webViewClient = WebViewClient()
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -52,7 +54,7 @@ fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
             if (webView.tag as? Int != hash) {
                 webView.tag = hash
                 webView.loadDataWithBaseURL(
-                    "https://cdn.jsdelivr.net", // baseUrl нужен чтобы CDN-скрипты грузились
+                    "https://cdn.jsdelivr.net",
                     htmlContent,
                     "text/html",
                     "UTF-8",
@@ -76,17 +78,19 @@ private fun buildHtml(
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 
-  <!-- marked.js — полноценный Markdown-парсер -->
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
 
-  <!-- KaTeX -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 
   <style>
+    html, body {
+      overflow-x: hidden;
+      width: 100%;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 16px;
@@ -112,8 +116,20 @@ private fun buildHtml(
       color: $codeColor;
     }
     pre code { display: block; padding: 10px; overflow-x: auto; }
-    .katex          { font-size: 1.1em; }
-    .katex-display  { margin: 12px 0; overflow-x: auto; text-align: center; }
+
+    /* Формулы: убираем внутренний скролл, масштабируем через JS */
+    .katex { font-size: 1em; }
+    .katex-display {
+      margin: 12px 0;
+      overflow-x: visible;
+      text-align: center;
+      width: 100%;
+    }
+    .katex-display > .katex {
+      white-space: normal;
+      max-width: 100%;
+    }
+
     strong { font-weight: 700; }
     em     { font-style: italic; }
     hr     { border: none; border-top: 1px solid rgba(128,128,128,0.3); margin: 12px 0; }
@@ -129,7 +145,6 @@ private fun buildHtml(
   <div id="content"></div>
 
   <script>
-    // Декодируем base64 → UTF-8 строку (поддержка кириллицы и LaTeX)
     function decodeBase64Utf8(b64) {
       var binary = atob(b64);
       var bytes = new Uint8Array(binary.length);
@@ -139,13 +154,29 @@ private fun buildHtml(
 
     var rawMarkdown = decodeBase64Utf8("$base64Markdown");
 
-    // 1. Рендерим Markdown → HTML через marked.js
-    //    (он корректно обрабатывает *, **, #, списки и т.д.)
-    marked.setOptions({ breaks: true, gfm: true });
-    document.getElementById('content').innerHTML = marked.parse(rawMarkdown);
+    var mathStore = [];
 
-    // 2. Рендерим LaTeX через KaTeX auto-render
-    //    (ПОСЛЕ markdown-рендера, чтобы $...$ внутри <p> тоже обработались)
+    function saveMath(str) {
+      var id = '\x02MATH' + mathStore.length + '\x03';
+      mathStore.push(str);
+      return id;
+    }
+
+    var protected = rawMarkdown
+      .replace(/\$\$[\s\S]*?\$\$/g, function(m) { return saveMath(m); })
+      .replace(/\\\[[\s\S]*?\\\]/g, function(m) { return saveMath(m); })
+      .replace(/\\\([\s\S]*?\\\)/g, function(m) { return saveMath(m); })
+      .replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$/g, function(m) { return saveMath(m); });
+
+    marked.setOptions({ breaks: true, gfm: true });
+    var html = marked.parse(protected);
+
+    html = html.replace(/\x02MATH(\d+)\x03/g, function(_, idx) {
+      return mathStore[parseInt(idx, 10)];
+    });
+
+    document.getElementById('content').innerHTML = html;
+
     renderMathInElement(document.body, {
       delimiters: [
         { left: "\$\$", right: "\$\$", display: true  },
@@ -155,6 +186,19 @@ private fun buildHtml(
       ],
       throwOnError: false,
       trust: true
+    });
+
+    // Масштабируем широкие формулы чтобы они влезали в экран
+    var containerWidth = document.body.clientWidth;
+    document.querySelectorAll('.katex-display').forEach(function(el) {
+      var elWidth = el.scrollWidth;
+      if (elWidth > containerWidth && containerWidth > 0) {
+        var scale = containerWidth / elWidth;
+        el.style.transform = 'scale(' + scale + ')';
+        el.style.transformOrigin = 'left top';
+        // Компенсируем уменьшение высоты после scale
+        el.style.marginBottom = ((el.offsetHeight * scale) - el.offsetHeight) + 'px';
+      }
     });
   </script>
 </body>
