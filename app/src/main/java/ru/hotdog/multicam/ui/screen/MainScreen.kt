@@ -42,31 +42,33 @@ import coil.compose.AsyncImagePainter
 import kotlinx.coroutines.launch
 import ru.hotdog.multicam.model.FavoriteCategory
 import ru.hotdog.multicam.model.FavoriteItem
+import ru.hotdog.multicam.model.buildFavoriteTitleFromText
+import ru.hotdog.multicam.model.detectFavoriteCategory
 import ru.hotdog.multicam.ui.component.FavoritesDrawerContent
-import ru.hotdog.multicam.ui.component.MarkdownText
 import ru.hotdog.multicam.ui.component.NutritionCard
 import ru.hotdog.multicam.ui.component.ProductLinksCard
+import ru.hotdog.multicam.ui.component.ResultText
 
 // ── Category / title helpers ──────────────────────────────────────────────────
 
-private fun detectCategory(vm: ImageViewModel): FavoriteCategory = when {
-    vm.nutritionData != null                                  -> FavoriteCategory.FOOD
-    vm.searchResult.isNotEmpty()                              -> FavoriteCategory.OBJECT_SEARCH
-    vm.detections?.isNotEmpty() == true && vm.result == null -> FavoriteCategory.IMAGES
-    vm.result?.let { text ->
-        text.contains("=") || text.contains("²") || text.contains("√") ||
-                text.contains("∫") || text.contains("∑") || text.contains("∞")
-    } == true                                                 -> FavoriteCategory.MATH
-    else                                                      -> FavoriteCategory.TEXT
-}
+// На этом экране категорию нужно вычислять локально, потому что от неё зависит вкладка избранного.
+// Приоритеты важны: сначала явные server tags, потом еда/поиск/изображения, потом уже текстовые эвристики.
+private fun detectCategory(vm: ImageViewModel): FavoriteCategory =
+    detectFavoriteCategory(
+        text = vm.result,
+        tag = vm.rawResponse?.tag,
+        hasNutrition = vm.nutritionData != null,
+        hasSearchResults = vm.searchResult.isNotEmpty(),
+        hasDetectionsOnly = vm.detections?.isNotEmpty() == true && vm.result == null
+    )
 
+// Заголовок должен быть коротким и осмысленным, иначе карточки в избранном превращаются в мусорный лог.
 private fun buildTitle(vm: ImageViewModel): String = when {
     vm.nutritionData != null    -> "🍽 ${vm.nutritionData!!.calories} ккал"
     vm.searchResult.isNotEmpty() -> "🔍 ${vm.detections?.firstOrNull()?.label ?: "Объект"}"
     vm.detections?.isNotEmpty() == true ->
         "📸 ${vm.detections!!.firstOrNull()?.label ?: "Изображение"}"
-    else -> vm.result?.lines()?.firstOrNull { it.isNotBlank() }
-        ?.take(50)?.trim() ?: "Ответ"
+    else -> buildFavoriteTitleFromText(vm.result)
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -81,37 +83,50 @@ fun MainScreen(
     modifier: Modifier = Modifier
 ) {
     val context     = LocalContext.current
+    // drawerState нужен, чтобы управлять боковым меню с избранным.
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    // Coroutine scope позволяет открывать/закрывать drawer из обработчиков кнопок.
     val scope       = rememberCoroutineScope()
+    // Состояние списка нужно, чтобы Compose корректно сохранял позицию и не пересоздавал скролл лишний раз.
     val listState   = rememberLazyListState()
 
+    // Выбранная пользователем картинка.
     var selectedUri        by remember { mutableStateOf<Uri?>(null) }
+    // Флаг для показа/скрытия "хода мыслей" в текстовой карточке.
     var isReasoningVisible by remember { mutableStateOf(false) }
+    // Размер картинки нужен для правильного пересчёта координат overlay-детекций.
     var imageIntrinsicSize by remember { mutableStateOf<IntSize?>(null) }
 
+    // Когда меняется выбранный файл, старый размер картинки уже невалиден.
     LaunchedEffect(selectedUri) { imageIntrinsicSize = null }
+    // Ошибку показываем через Toast, чтобы не ломать текущий экран.
     LaunchedEffect(viewModel.error) {
         viewModel.error?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
 
+    // Activity Result API нужен для выбора изображения из галереи.
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         selectedUri = uri
     }
 
+    // Боковое меню с избранным.
     ModalNavigationDrawer(
         drawerState   = drawerState,
         gesturesEnabled = true,  // свайп влево закрывает
         scrimColor = DrawerDefaults.scrimColor,  // клик на затемнение закрывает
         drawerContent = {
+            // Сам drawer-sheet с категориями и списком сохранённых ответов.
             ModalDrawerSheet { FavoritesDrawerContent(vm = favoritesVm) }
         }
     ) {
+        // Scaffold даёт стандартную структуру: top bar + content.
         Scaffold(
             modifier = modifier,
             topBar   = {
                 TopAppBar(
                     title = { Text("MultiCam", fontWeight = FontWeight.Bold) },
                     navigationIcon = {
+                        // Кнопка меню открывает drawer с избранным.
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Default.Menu, contentDescription = "Избранное")
                         }
@@ -123,6 +138,7 @@ fun MainScreen(
             }
         ) { innerPadding ->
 
+            // Основной контент экрана: список карточек, собранный через LazyColumn.
             LazyColumn(
                 state       = listState,
                 modifier    = Modifier
@@ -136,6 +152,7 @@ fun MainScreen(
 
                 // ── Image preview ─────────────────────────────────────────────
                 item {
+                    // Блок превью нужен, чтобы пользователь сразу видел загруженное изображение и детекции.
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -145,6 +162,7 @@ fun MainScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         if (selectedUri != null) {
+                            // Показываем изображение с сохранением пропорций.
                             AsyncImage(
                                 model              = selectedUri,
                                 contentDescription = null,
@@ -160,11 +178,13 @@ fun MainScreen(
                                 }
                             )
 
+                            // Overlay рисуем только если уже знаем фактический размер исходного изображения.
                             val intrinsic = imageIntrinsicSize
                             viewModel.detections
                                 ?.takeIf { it.isNotEmpty() && intrinsic != null }
                                 ?.let { dets ->
                                     Canvas(modifier = Modifier.fillMaxSize()) {
+                                        // Пересчитываем координаты bbox из нормализованной системы в пиксели экрана.
                                         val scaleX    = size.width  / intrinsic!!.width
                                         val scaleY    = size.height / intrinsic.height
                                         val scale     = minOf(scaleX, scaleY)
@@ -184,6 +204,7 @@ fun MainScreen(
                                     }
                                 }
                         } else {
+                            // Если изображения нет, показываем нейтральный плейсхолдер.
                             Text("Фото не выбрано", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -191,6 +212,7 @@ fun MainScreen(
 
                 // ── Buttons ───────────────────────────────────────────────────
                 item {
+                    // Две основные команды экрана: выбрать файл и отправить его на анализ.
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { launcher.launch("image/*") }) {
                             Text("Выбрать фото")
@@ -207,6 +229,7 @@ fun MainScreen(
                 // ── Results ───────────────────────────────────────────────────
                 when {
                     viewModel.isLoading -> item {
+                        // Пока сервер отвечает, показываем компактный индикатор загрузки.
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(Modifier.height(8.dp))
@@ -215,6 +238,7 @@ fun MainScreen(
                     }
 
                     viewModel.error != null -> item {
+                        // Ошибка с сервера или сети выводится прямо здесь.
                         Text(viewModel.error!!, color = MaterialTheme.colorScheme.error)
                     }
 
@@ -222,6 +246,7 @@ fun MainScreen(
                         // ── Nutrition card ────────────────────────────────────
                         viewModel.nutritionData?.let { nutrition ->
                             item {
+                                // Карточка питания хранится отдельно, потому что у неё другой формат данных.
                                 NutritionCard(
                                     data        = nutrition,
                                     isLiked     = favoritesVm.contains(viewModel.currentResultId ?: ""),
@@ -231,6 +256,7 @@ fun MainScreen(
                                         if (favoritesVm.contains(id)) {
                                             favoritesVm.remove(id)
                                         } else {
+                                            // Для nutrition категория фиксированная, эвристика не нужна.
                                             val cat = FavoriteCategory.FOOD
                                             favoritesVm.add(
                                                 item = FavoriteItem(
@@ -254,11 +280,13 @@ fun MainScreen(
 
                         // ── Text result card ──────────────────────────────────
                         viewModel.result?.let { resultText ->
+                            // Ответ может содержать служебный блок "ход мыслей", его выносим отдельно.
                             val parts     = resultText.split("#### Ход мыслей")
                             val solution  = parts[0]
                             val reasoning = if (parts.size > 1) parts[1] else null
 
                             item {
+                                // На карточке ответа лайк должен сохранять и текст, и raw payload.
                                 ResultCard(
                                     solution           = solution,
                                     reasoning          = reasoning,
@@ -271,6 +299,7 @@ fun MainScreen(
                                         if (favoritesVm.contains(id)) {
                                             favoritesVm.remove(id)
                                         } else {
+                                            // Категорию определяем по содержимому, чтобы физика/химия не попадали в math.
                                             val cat = detectCategory(viewModel)
                                             favoritesVm.add(
                                                 item = FavoriteItem(
@@ -297,6 +326,7 @@ fun MainScreen(
                         if (viewModel.nutritionData == null && viewModel.result == null) {
                             viewModel.detections?.takeIf { it.isNotEmpty() }?.let { dets ->
                                 item {
+                                    // Если есть только объекты, сохраняем это как отдельный сценарий "изображения".
                                     DetectionsCard(
                                         detections      = dets.map { it.label },
                                         currentResultId = viewModel.currentResultId,
@@ -306,6 +336,7 @@ fun MainScreen(
                                             if (favoritesVm.contains(id)) {
                                                 favoritesVm.remove(id)
                                             } else {
+                                                // Для такого ответа категория также фиксированная.
                                                 val cat = FavoriteCategory.IMAGES
                                                 favoritesVm.add(
                                                     item = FavoriteItem(
@@ -327,6 +358,7 @@ fun MainScreen(
                         // ── Product links ─────────────────────────────────────
                         viewModel.searchResult.takeIf { it.isNotEmpty() }?.let { links ->
                             item {
+                                // Блок ссылок на товары выводим только когда бэкенд действительно вернул search results.
                                 ProductLinksCard(
                                     objectLabel  = viewModel.detections?.firstOrNull()?.label ?: "товар",
                                     searchResult = links
@@ -344,6 +376,7 @@ fun MainScreen(
 
 @Composable
 private fun GuestBadge(onClick: () -> Unit) {
+    // Отдельный chip для гостя, чтобы не смешивать его с основными действиями.
     Surface(
         onClick         = onClick,
         shape           = RoundedCornerShape(20.dp),
@@ -374,6 +407,7 @@ private fun GuestBadge(onClick: () -> Unit) {
 
 @Composable
 private fun LikeButton(isLiked: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    // Лайк визуально усиливаем анимацией масштаба и цветом, чтобы состояние читалось мгновенно.
     val scale by animateFloatAsState(
         targetValue   = if (isLiked) 1.25f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
@@ -403,6 +437,7 @@ private fun ResultCard(
     isLiked: Boolean,
     onLike: () -> Unit
 ) {
+    // Основная карточка текстового результата: слева контент, справа сердце.
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -410,13 +445,15 @@ private fun ResultCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.Top
             ) {
+                // Текст рендерится через отдельный слой, чтобы markdown и latex жили в одном месте.
                 Box(modifier = Modifier.weight(1f)) {
-                    MarkdownText(markdown = solution)
+                    ResultText(text = solution)
                 }
                 LikeButton(isLiked = isLiked, enabled = currentResultId != null, onClick = onLike)
             }
 
             reasoning?.let {
+                // Разделитель нужен, чтобы визуально отделить итог от объяснения.
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth().clickable(onClick = onToggleReasoning),
@@ -427,7 +464,8 @@ private fun ResultCard(
                     Text(if (isReasoningVisible) "▲" else "▼")
                 }
                 AnimatedVisibility(visible = isReasoningVisible) {
-                    MarkdownText(markdown = it, modifier = Modifier.padding(top = 8.dp))
+                    // Блок reasoning проходит через тот же рендерер, что и основной ответ.
+                    ResultText(text = it, modifier = Modifier.padding(top = 8.dp))
                 }
             }
         }
@@ -441,6 +479,7 @@ private fun DetectionsCard(
     isLiked: Boolean,
     onLike: () -> Unit
 ) {
+    // У карточки детекций задача проще: показать список объектов и дать сохранить результат как image-only.
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -448,11 +487,13 @@ private fun DetectionsCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment     = Alignment.CenterVertically
             ) {
+                // Заголовок здесь намеренно короткий, потому что список ниже уже несёт смысл.
                 Text("Обнаруженные объекты", style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary)
                 LikeButton(isLiked = isLiked, enabled = currentResultId != null, onClick = onLike)
             }
             Spacer(Modifier.height(8.dp))
+            // Лейблы показываем простым списком без дополнительного рендера.
             detections.forEach { label -> Text("• $label") }
         }
     }

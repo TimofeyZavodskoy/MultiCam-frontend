@@ -17,14 +17,19 @@ import ru.hotdog.multicam.api.dto.OCRResponse
 import ru.hotdog.multicam.api.dto.SaveRequest
 import ru.hotdog.multicam.model.FavoriteCategory
 import ru.hotdog.multicam.model.FavoriteItem
+import ru.hotdog.multicam.model.buildFavoriteTitleFromText
+import ru.hotdog.multicam.model.normalizeFavoriteCategory
 
 private const val TAG = "FavoritesVM"
 
 class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
 
+    // SharedPreferences держит кэш избранного локально, чтобы данные не пропадали между запусками.
     private val prefs = app.getSharedPreferences("favorites", Context.MODE_PRIVATE)
+    // Gson нужен для сериализации списка FavoriteItem в JSON и обратно.
     private val gson  = Gson()
 
+    // Текущее состояние избранного; UI подписан на это поле напрямую.
     var favorites by mutableStateOf<List<FavoriteItem>>(emptyList())
         private set
 
@@ -33,6 +38,7 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     init {
+        // Сначала поднимаем локальный кэш, а уже потом при необходимости синкаем сервер.
         loadLocal()
         if (!RetrofitClient.authToken.isNullOrBlank()) {
             syncFromBackend()
@@ -42,12 +48,23 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
     // ── Локальное хранилище ───────────────────────────────────────────────────
 
     private fun loadLocal() {
+        // Если ключа нет, значит локального кэша ещё не существует.
         val json = prefs.getString("items", null) ?: return
+        // TypeToken нужен из-за стирания generic-типов в JVM.
         val type = object : TypeToken<List<FavoriteItem>>() {}.type
-        favorites = gson.fromJson(json, type) ?: emptyList()
+        // Старые записи поднимаем и сразу нормализуем категорию + заголовок.
+        favorites = (gson.fromJson<List<FavoriteItem>>(json, type) ?: emptyList()).map { item ->
+            item.copy(
+                category = normalizeFavoriteCategory(item.category, item.resultText),
+                title = buildFavoriteTitleFromText(item.resultText, item.title)
+            )
+        }
+        // Перезаписываем кэш уже очищенной версией, чтобы дальше не тащить старые ошибки.
+        persist()
     }
 
     private fun persist() {
+        // Храним весь список одним JSON-массивом, потому что это проще и надёжнее для мелкого кэша.
         prefs.edit().putString("items", gson.toJson(favorites)).apply()
     }
 
@@ -58,21 +75,25 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
      * После успешного сохранения обновляет [FavoriteItem.backendId].
      */
     fun add(item: FavoriteItem, rawResponse: OCRResponse?, category: FavoriteCategory) {
+        // Дубликаты по id не нужны: одна и та же карточка должна лайкаться только один раз.
         if (favorites.any { it.id == item.id }) return
 
+        // Сначала показываем результат в UI, чтобы лайк ощущался мгновенно.
         favorites = listOf(item) + favorites
         persist()
 
+        // Если сырого ответа нет, синк на сервер невозможен, но локальный лайк всё равно остаётся.
         rawResponse ?: return
         viewModelScope.launch {
             try {
+                // На сервер отправляем raw OCR payload вместе с категорией.
                 val resp = RetrofitClient.api.saveLike(
                     SaveRequest(clientJson = rawResponse, category = category.name)
                 )
                 if (resp.isSuccessful) {
                     val backendId = resp.body()?.id
                     if (backendId != null) {
-                        // Сохраняем backendId — понадобится при удалении
+                        // Сохраняем backendId — он нужен, чтобы потом сделать DELETE уже по серверному id.
                         favorites = favorites.map {
                             if (it.id == item.id) it.copy(backendId = backendId) else it
                         }
@@ -94,13 +115,16 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
      * Удаляет лайк локально и отправляет DELETE на бекенд (если есть backendId).
      */
     fun remove(id: String) {
+        // Сначала убираем запись из UI и локального кэша, чтобы состояние обновилось без ожидания сети.
         val item = favorites.find { it.id == id }
         favorites = favorites.filter { it.id != id }
         persist()
 
+        // Если серверного id нет, значит удалять на бэкенде нечего.
         val backendId = item?.backendId ?: return
         viewModelScope.launch {
             try {
+                // Серверное удаление выполняем фоном и не валим UI при ошибке.
                 val resp = RetrofitClient.api.deleteLike(backendId)
                 if (resp.isSuccessful) {
                     Log.d(TAG, "Like deleted on backend: backendId=$backendId")
@@ -117,6 +141,7 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
 
     fun contains(id: String) = favorites.any { it.id == id }
 
+    // Фильтр по категории нужен для вкладок drawer-а.
     fun byCategory(cat: FavoriteCategory) = favorites.filter { it.category == cat }
 
     // ── Синк с бекендом ───────────────────────────────────────────────────────
@@ -129,32 +154,38 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             isSyncing = true
             try {
+                // Запрашиваем сохранённые лайки у сервера.
                 val resp = RetrofitClient.api.getLikes()
                 if (resp.isSuccessful) {
                     val remote = resp.body() ?: emptyList()
+                    // Каждый DTO превращаем в локальную модель, попутно восстанавливая текст и категорию.
                     favorites = remote.mapNotNull { dto ->
+                        // Категория хранится строкой, поэтому распаковываем её осторожно.
                         val cat = runCatching {
                             FavoriteCategory.valueOf(dto.category ?: "")
                         }.getOrNull() ?: return@mapNotNull null
 
-                        // Пробуем распарсить jsonData для извлечения КБЖУ и текста
+                        // jsonData содержит сырой ответ, из которого можно достать полный текст и КБЖУ.
                         val ocr = runCatching {
                             gson.fromJson(dto.jsonData, OCRResponse::class.java)
                         }.getOrNull()
 
+                        // Одну и ту же сущность используем и для локального кэша, и для UI.
+                        val resultText = ocr?.solution ?: ocr?.result ?: ocr?.content ?: ocr?.description
                         FavoriteItem(
                             id         = "backend_${dto.id}",
                             backendId  = dto.id,
                             timestamp  = parseTimestamp(dto.createdAt),
-                            category   = cat,
-                            title      = buildTitleFromOcr(ocr, cat),
-                            resultText = ocr?.solution ?: ocr?.result ?: ocr?.content ?: ocr?.description,
+                            category   = normalizeFavoriteCategory(cat, resultText, ocr?.tag),
+                            title      = buildTitleFromOcr(ocr, cat, resultText),
+                            resultText = resultText,
                             calories   = ocr?.calories,
                             proteins   = ocr?.proteins,
                             fats       = ocr?.fats,
                             carbs      = ocr?.carbs
                         )
                     }
+                    // После синка сервер становится источником правды, поэтому обновлённый список снова кэшируем локально.
                     persist()
                     Log.d(TAG, "Synced ${favorites.size} likes from backend")
                 } else {
@@ -172,19 +203,26 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private fun buildTitleFromOcr(ocr: OCRResponse?, cat: FavoriteCategory): String {
+    private fun buildTitleFromOcr(ocr: OCRResponse?, cat: FavoriteCategory, resultText: String?): String {
+        // Если ответа нет вообще, лучше показать хотя бы имя категории.
         if (ocr == null) return cat.displayName
         return when (cat) {
+            // Для еды в заголовок идут калории, потому что это самый короткий и понятный сигнал.
             FavoriteCategory.FOOD          -> "🍽 ${ocr.calories ?: "?"} ккал"
+            // Для поиска объектов важнее label первого результата, чем весь текст ответа.
             FavoriteCategory.OBJECT_SEARCH -> "🔍 ${ocr.detections?.firstOrNull()?.label ?: "Объект"}"
+            // Для картинок показываем первую найденную сущность.
             FavoriteCategory.IMAGES        -> "📸 ${ocr.detections?.firstOrNull()?.label ?: "Изображение"}"
-            FavoriteCategory.PHYSICS       -> "⚛️ ${ocr.result?.lines()?.firstOrNull { it.isNotBlank() }?.take(50)?.trim() ?: "Физика"}"
-            FavoriteCategory.CHEMISTRY     -> "🧪 ${ocr.result?.lines()?.firstOrNull { it.isNotBlank() }?.take(50)?.trim() ?: "Химия"}"
-            else -> ocr.result?.lines()?.firstOrNull { it.isNotBlank() }?.take(50)?.trim() ?: cat.displayName
+            // Физика и химия часто начинаются с служебных markdown-заголовков, поэтому чистим текст.
+            FavoriteCategory.PHYSICS       -> "⚛️ ${buildFavoriteTitleFromText(resultText, "Физика")}"
+            FavoriteCategory.CHEMISTRY     -> "🧪 ${buildFavoriteTitleFromText(resultText, "Химия")}"
+            // Для остальных категорий берём первую содержательную строку.
+            else -> buildFavoriteTitleFromText(resultText, cat.displayName)
         }
     }
 
     private fun parseTimestamp(createdAt: String?): Long {
+        // Если сервер не прислал дату, fallback на текущее время, чтобы сортировка не ломалась.
         if (createdAt == null) return System.currentTimeMillis()
         return runCatching {
             // формат от Spring: "2026-05-10T12:34:56" или массив [2026,5,10,12,34,56]
