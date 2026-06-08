@@ -27,10 +27,14 @@ import java.util.*
 
 @Composable
 fun FavoritesDrawerContent(vm: ru.hotdog.multicam.ui.screen.FavoritesViewModel) {
+    // Все вкладки строим из enum, чтобы drawer автоматически синхронизировался с категориями приложения.
     val tabs = FavoriteCategory.values().toList()
+    // Выбранная вкладка живёт только внутри drawer.
     var selectedTab by remember { mutableStateOf(0) }
+    // Детальная карточка открывается поверх списка, когда пользователь тапаёт по элементу.
     var detailItem  by remember { mutableStateOf<FavoriteItem?>(null) }
 
+    // Drawer занимает всю высоту, а контент внутри строится как вертикальная колонка.
     Column(
         modifier = Modifier
             .fillMaxHeight()
@@ -45,6 +49,7 @@ fun FavoritesDrawerContent(vm: ru.hotdog.multicam.ui.screen.FavoritesViewModel) 
                 .padding(horizontal = 20.dp, vertical = 22.dp)
         ) {
             Column {
+                // Шапка показывает название раздела и общее количество сохранённых ответов.
                 Text(
                     text = "⭐ Избранное",
                     style    = MaterialTheme.typography.headlineSmall,
@@ -62,6 +67,7 @@ fun FavoritesDrawerContent(vm: ru.hotdog.multicam.ui.screen.FavoritesViewModel) 
 
         // ── Tabs ──────────────────────────────────────────────────────────────
         ScrollableTabRow(
+            // Активная вкладка определяет, какой список мы фильтруем ниже.
             selectedTabIndex = selectedTab,
             edgePadding      = 0.dp,
             containerColor   = MaterialTheme.colorScheme.surface,
@@ -73,6 +79,7 @@ fun FavoritesDrawerContent(vm: ru.hotdog.multicam.ui.screen.FavoritesViewModel) 
                     selected = selectedTab == index,
                     onClick  = { selectedTab = index },
                     text = {
+                        // Эмодзи + название дают быстрый визуальный ориентир для категории.
                         Text(
                             text = "${cat.emoji} ${cat.displayName}",
                             fontSize = 12.sp,
@@ -85,9 +92,11 @@ fun FavoritesDrawerContent(vm: ru.hotdog.multicam.ui.screen.FavoritesViewModel) 
         HorizontalDivider()
 
         // ── List or empty state ───────────────────────────────────────────────
+        // Список всегда фильтруется по выбранной категории.
         val categoryItems = vm.byCategory(tabs[selectedTab])
 
         if (categoryItems.isEmpty()) {
+            // Пустое состояние объясняет пользователю, почему вкладка пока пустая.
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(tabs[selectedTab].emoji, fontSize = 52.sp)
@@ -107,12 +116,14 @@ fun FavoritesDrawerContent(vm: ru.hotdog.multicam.ui.screen.FavoritesViewModel) 
                 }
             }
         } else {
+            // Список избранного делаем ленивым, чтобы drawer не терял отзывчивость на длинных подборках.
             LazyColumn(
                 modifier        = Modifier.fillMaxSize(),
                 contentPadding  = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(categoryItems, key = { it.id }) { fav ->
+                    // Карточка элемента отдельно обрабатывает tap и delete.
                     FavoriteCard(
                         item     = fav,
                         onDelete = { vm.remove(fav.id) },
@@ -124,6 +135,7 @@ fun FavoritesDrawerContent(vm: ru.hotdog.multicam.ui.screen.FavoritesViewModel) 
     }
 
     // ── Detail dialog ─────────────────────────────────────────────────────────
+    // Диалог показываем только когда пользователь выбрал конкретную карточку.
     detailItem?.let { item ->
         FavoriteDetailDialog(item = item, onDismiss = { detailItem = null })
     }
@@ -137,6 +149,7 @@ private fun FavoriteCard(
     onDelete: () -> Unit,
     onTap: () -> Unit
 ) {
+    // Карточка делает две вещи: открывает детали и даёт удалить запись.
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -150,6 +163,7 @@ private fun FavoriteCard(
             modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Левая часть карточки содержит заголовок, время и при наличии КБЖУ — краткую сводку.
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text       = item.title,
@@ -166,6 +180,7 @@ private fun FavoriteCard(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
                 )
                 if (item.calories != null) {
+                    // КБЖУ показываем только для food-ответов, чтобы не шуметь в других категориях.
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text  = "🔥${item.calories} · 💪${item.proteins}г · 🧈${item.fats}г · 🌾${item.carbs}г",
@@ -175,6 +190,7 @@ private fun FavoriteCard(
                 }
             }
 
+            // Кнопка удаления всегда справа, потому что это вторичное действие.
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector        = Icons.Default.Delete,
@@ -190,6 +206,7 @@ private fun FavoriteCard(
 
 @Composable
 private fun FavoriteDetailDialog(item: FavoriteItem, onDismiss: () -> Unit) {
+    // Диалог даёт более полный просмотр сохранённого ответа.
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape    = RoundedCornerShape(16.dp),
@@ -205,7 +222,7 @@ private fun FavoriteDetailDialog(item: FavoriteItem, onDismiss: () -> Unit) {
                 )
                 Spacer(Modifier.height(10.dp))
 
-                // Nutrition summary
+                // Краткая сводка по питанию показывается только для соответствующих записей.
                 if (item.calories != null) {
                     listOf(
                         "🔥 Калории" to "${item.calories} ккал",
@@ -228,7 +245,7 @@ private fun FavoriteDetailDialog(item: FavoriteItem, onDismiss: () -> Unit) {
                     Spacer(Modifier.height(10.dp))
                 }
 
-                // Text result with scroll
+                // Сам текст ответа может быть длинным, поэтому делаем ему вертикальный scroll.
                 item.resultText?.let { text ->
                     val scrollState = rememberScrollState()
                     Column(
@@ -236,12 +253,12 @@ private fun FavoriteDetailDialog(item: FavoriteItem, onDismiss: () -> Unit) {
                             .heightIn(max = 280.dp)
                             .verticalScroll(scrollState)
                     ) {
-                        Text(text, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface)
+                        ResultText(text = text)
                     }
                     Spacer(Modifier.height(10.dp))
                 }
 
+                // Закрытие диалога — обычная текстовая кнопка внизу справа.
                 TextButton(
                     onClick   = onDismiss,
                     modifier  = Modifier.align(Alignment.End)
@@ -254,6 +271,7 @@ private fun FavoriteDetailDialog(item: FavoriteItem, onDismiss: () -> Unit) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 private fun formatTimestamp(ts: Long): String {
+    // Преобразуем raw timestamp в человекочитаемую дату "только что / N мин назад / dd.MM.yyyy".
     val diff = System.currentTimeMillis() - ts
     return when {
         diff < 60_000L       -> "только что"
