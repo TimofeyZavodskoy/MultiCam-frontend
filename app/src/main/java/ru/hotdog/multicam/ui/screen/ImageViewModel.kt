@@ -24,6 +24,7 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.util.UUID
 
+// Управляет состоянием анализа изображения и ответом backend.
 class ImageViewModel : ViewModel() {
 
     var result by mutableStateOf<String?>(null)
@@ -39,16 +40,17 @@ class ImageViewModel : ViewModel() {
     var searchResult by mutableStateOf<List<SearchResult>>(emptyList())
         private set
 
-    /** Полный сырой ответ — передаётся в FavoritesViewModel при лайке */
+    // Хранит полный OCR-ответ для сохранения результата в избранное.
     var rawResponse by mutableStateOf<OCRResponse?>(null)
         private set
 
-    /** Уникальный id текущего результата — используется для отслеживания состояния лайка */
+    // Хранит UUID текущего результата для проверки лайка.
     var currentResultId by mutableStateOf<String?>(null)
         private set
 
     private var currentJob: Job? = null
 
+    // Сжимает изображение, отправляет его на backend и раскладывает ответ по состояниям UI.
     fun analyzeImage(context: Context, uri: Uri) {
         currentJob?.cancel()
 

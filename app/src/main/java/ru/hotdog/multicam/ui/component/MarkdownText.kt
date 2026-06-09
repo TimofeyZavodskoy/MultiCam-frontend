@@ -19,22 +19,7 @@ import android.util.Base64
 import android.widget.FrameLayout
 import java.util.Locale
 
-/**
- * Рендерит Markdown + LaTeX через WebView с библиотеками marked и KaTeX.
- *
- * Используется только когда текст содержит реальную разметку ([String.needsRichTextRenderer]).
- * Для обычного текста используй [ResultText] — он выбирает между WebView и простым [Text].
- *
- * ## Технические детали
- * - marked.js парсит Markdown → HTML
- * - KaTeX рендерит LaTeX формулы ($$...$$, \[...\], \(...\))
- * - Горизонтальный скролл внутри WebView для широких формул и блоков кода
- * - Жест разделяется по направлению: горизонтальный → WebView, вертикальный → родитель
- * - Контент передаётся через base64 во избежание проблем с экранированием спецсимволов
- *
- * @param markdown исходный Markdown+LaTeX текст
- * @param modifier модификатор для внешнего контейнера
- */
+// Рендерит Markdown и LaTeX через WebView с цветами текущей темы.
 @Composable
 fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
     val textColor    = intToHexColor(MaterialTheme.colorScheme.onSurface.toArgb())
@@ -108,24 +93,7 @@ fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
     )
 }
 
-/**
- * Умный рендерер текста — выбирает между WebView и обычным [Text].
- *
- * ## Логика выбора
- * - Есть LaTeX или Markdown-разметка → [MarkdownText] (WebView + KaTeX)
- * - Обычный текст → нативный Compose [Text] с переносом строк
- *
- * Для горизонтального скролла (формулы/код) используется WebView.
- * Обычный текст всегда переносится на новую строку — никаких обрезаний.
- *
- * ## FIX: убрана проблема с обрезанием текста
- * Раньше plain-текст рендерился с `softWrap = false` + `horizontalScroll`,
- * что обрезало строки справа в большинстве реальных случаев.
- * Теперь: `softWrap = true` (дефолт) + `overflow = TextOverflow.Visible`.
- *
- * @param text     текст для отображения (Markdown, LaTeX или обычный)
- * @param modifier модификатор
- */
+// Выбирает простой Text или MarkdownText для результата анализа.
 @Composable
 fun ResultText(text: String, modifier: Modifier = Modifier) {
     if (text.needsRichTextRenderer()) {
@@ -149,32 +117,12 @@ fun ResultText(text: String, modifier: Modifier = Modifier) {
 // ДЕТЕКТОРЫ РАЗМЕТКИ
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Определяет, нужен ли тяжёлый WebView-рендерер для данного текста.
- *
- * Возвращает true только если текст содержит LaTeX или Markdown-разметку.
- * Обычный текст (категории "text", "image") рендерится через нативный [Text].
- *
- * ## FIX: категория "text" (OCR обычного текста)
- * Раньше любой текст мог попасть в WebView из-за ложных срабатываний детектора.
- * Теперь детекторы более строгие — требуют явные маркеры разметки.
- */
+// Проверяет, нужен ли rich-renderer для Markdown или LaTeX.
 private fun String.needsRichTextRenderer(): Boolean {
     return containsLatex() || containsMarkdown()
 }
 
-/**
- * Ищет LaTeX-разметку в тексте.
- *
- * Проверяет все распространённые формы:
- * - `$$...$$` — display math
- * - `\[...\]` — display math (альтернатива)
- * - `\(...\)` — inline math
- * - `$...$` — inline math (одиночные доллары, исключая двойные `$$`)
- *
- * Одиночный `$` требует хотя бы одного символа между знаками и не допускает переноса строки,
- * чтобы не ловить случайные знаки доллара в обычных текстах ("стоит $5").
- */
+// Находит признаки LaTeX-формул в строке.
 private fun String.containsLatex(): Boolean {
     return contains("$$") ||
             contains("\\(") ||
@@ -185,21 +133,7 @@ private fun String.containsLatex(): Boolean {
             Regex("""(^|[^$])\$[^$\n]+\$""").containsMatchIn(this)
 }
 
-/**
- * Ищет Markdown-разметку в тексте.
- *
- * Проверяет построчно — так меньше ложных срабатываний.
- *
- * Распознаёт:
- * - Заголовки: строки начинающиеся с `#`
- * - Списки: `- `, `* `, `> `, нумерованные `1. `
- * - Инлайн-форматирование: `**bold**`, `__bold__`, `` `code` ``, `[link](url)`
- *
- * ## НЕ распознаёт как Markdown
- * - Обычные дефисы в середине строки
- * - Одиночные звёздочки без пары
- * - Числа с точкой в середине предложения
- */
+// Находит признаки Markdown-разметки в строке.
 private fun String.containsMarkdown(): Boolean {
     return lineSequence().any { line ->
         val trimmed = line.trimStart()
@@ -212,33 +146,11 @@ private fun String.containsMarkdown(): Boolean {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// УТИЛИТЫ
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Конвертирует Compose Color (Int ARGB) в CSS hex-строку #RRGGBB. */
+// Преобразует ARGB-цвет Android в CSS hex RGB.
 private fun intToHexColor(color: Int) =
     String.format(Locale.US, "#%06X", 0xFFFFFF and color)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HTML-ШАБЛОН ДЛЯ WEBVIEW
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Строит полный HTML-документ для рендера Markdown + LaTeX в WebView.
- *
- * ## Архитектура
- * 1. Декодируем base64 → исходный Markdown
- * 2. Защищаем LaTeX-блоки от marked.js: заменяем на временные маркеры `\x02MATHN\x03`
- * 3. Прогоняем через marked.parse() → HTML
- * 4. Возвращаем LaTeX обратно на их места
- * 5. KaTeX auto-render обрабатывает все оставшиеся формулы
- *
- * @param base64Markdown исходный текст в base64 (UTF-8)
- * @param textColor      CSS hex цвет основного текста
- * @param headingColor   CSS hex цвет заголовков
- * @param codeColor      CSS hex цвет кода
- */
+// Собирает HTML-документ для безопасного рендера Markdown и LaTeX в WebView.
 private fun buildHtml(
     base64Markdown: String,
     textColor: String,

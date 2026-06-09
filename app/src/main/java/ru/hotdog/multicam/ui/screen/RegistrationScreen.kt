@@ -21,17 +21,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.time.LocalTime
 
+// Хранит текущий режим формы авторизации.
 private enum class AuthMode { REGISTER, LOGIN }
 
+// Рисует экран регистрации, входа, гостевого входа и апгрейда гостя.
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun RegistrationScreen(
     onLoginSuccess: () -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * true — пользователь пришёл сюда как гость через плашку «Регистрация».
-     * Токен гостя ещё активен → вызываем /auth/upgrade вместо /auth/signup.
-     */
+    // Определяет, отправлять ли форму в /auth/upgrade вместо обычной регистрации.
     isGuestUpgrade: Boolean = false,
     onCancelUpgrade: (() -> Unit)? = null,
     viewModel: RegistrationViewModel = viewModel()

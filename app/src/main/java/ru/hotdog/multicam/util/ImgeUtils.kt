@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
+// Читает изображение, уменьшает его и возвращает JPEG-байты.
 suspend fun compressImage(context: Context, uri: Uri, maxDimension: Int = 1024, quality: Int = 80 ): ByteArray? {
     return withContext(Dispatchers.IO) {
         try {

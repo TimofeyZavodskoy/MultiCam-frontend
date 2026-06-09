@@ -22,6 +22,7 @@ import ru.hotdog.multicam.model.normalizeFavoriteCategory
 
 private const val TAG = "FavoritesVM"
 
+// Управляет локальным и серверным избранным для UI.
 class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
 
     // SharedPreferences держит кэш избранного локально, чтобы данные не пропадали между запусками.
@@ -33,7 +34,7 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
     var favorites by mutableStateOf<List<FavoriteItem>>(emptyList())
         private set
 
-    /** true пока идёт начальная загрузка с бекенда */
+    // Показывает, идёт ли синхронизация избранного с backend.
     var isSyncing by mutableStateOf(false)
         private set
 
@@ -45,8 +46,7 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Локальное хранилище ───────────────────────────────────────────────────
-
+    // Загружает избранное из локального JSON-кэша и нормализует записи.
     private fun loadLocal() {
         // Если ключа нет, значит локального кэша ещё не существует.
         val json = prefs.getString("items", null) ?: return
@@ -63,6 +63,7 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
         persist()
     }
 
+    // Сохраняет текущий список избранного в SharedPreferences.
     private fun persist() {
         // Храним весь список одним JSON-массивом, потому что это проще и надёжнее для мелкого кэша.
         prefs.edit().putString("items", gson.toJson(favorites)).apply()
@@ -70,10 +71,7 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Публичный API ─────────────────────────────────────────────────────────
 
-    /**
-     * Добавляет лайк локально, затем синкает на бекенд.
-     * После успешного сохранения обновляет [FavoriteItem.backendId].
-     */
+    // Добавляет элемент в избранное локально и синхронизирует его с backend.
     fun add(item: FavoriteItem, rawResponse: OCRResponse?, category: FavoriteCategory) {
         // Дубликаты по id не нужны: одна и та же карточка должна лайкаться только один раз.
         if (favorites.any { it.id == item.id }) return
@@ -111,9 +109,7 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Удаляет лайк локально и отправляет DELETE на бекенд (если есть backendId).
-     */
+    // Удаляет элемент из избранного локально и на backend при наличии server id.
     fun remove(id: String) {
         // Сначала убираем запись из UI и локального кэша, чтобы состояние обновилось без ожидания сети.
         val item = favorites.find { it.id == id }
@@ -139,17 +135,13 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // Проверяет, есть ли элемент с указанным id в избранном.
     fun contains(id: String) = favorites.any { it.id == id }
 
-    // Фильтр по категории нужен для вкладок drawer-а.
+    // Возвращает избранные элементы только выбранной категории.
     fun byCategory(cat: FavoriteCategory) = favorites.filter { it.category == cat }
 
-    // ── Синк с бекендом ───────────────────────────────────────────────────────
-
-    /**
-     * Подгружает лайки с бекенда и делает их источником правды.
-     * Вызывается при старте (если залогинен) и может вызываться вручную.
-     */
+    // Загружает избранное с backend и объединяет его с локальным кэшем.
     fun syncFromBackend() {
         viewModelScope.launch {
             isSyncing = true
@@ -203,6 +195,7 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    // Строит заголовок избранного из OCR-ответа и категории.
     private fun buildTitleFromOcr(ocr: OCRResponse?, cat: FavoriteCategory, resultText: String?): String {
         // Если ответа нет вообще, лучше показать хотя бы имя категории.
         if (ocr == null) return cat.displayName
@@ -221,6 +214,7 @@ class FavoritesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // Преобразует backend-дату в timestamp или возвращает текущее время.
     private fun parseTimestamp(createdAt: String?): Long {
         // Если сервер не прислал дату, fallback на текущее время, чтобы сортировка не ломалась.
         if (createdAt == null) return System.currentTimeMillis()

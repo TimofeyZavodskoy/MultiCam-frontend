@@ -2,14 +2,18 @@ package ru.hotdog.multicam.api.dto
 
 import com.google.gson.annotations.SerializedName
 
+// Описывает координаты найденного объекта на изображении.
 data class BoundingBox(val x: Float, val y: Float, val width: Float, val height: Float)
+// Описывает найденный объект и его рамку.
 data class DetectedObj(val label: String, val bbox: ru.hotdog.multicam.api.dto.BoundingBox)
 
+// Описывает ссылку на найденный товар в маркетплейсе.
 data class SearchResult(
     @SerializedName("marketplace") val marketplace: String,
     @SerializedName("url")         val url: String,
     @SerializedName("icon")        val icon: String? = null
 )
+// Описывает полный ответ backend после анализа изображения.
 data class OCRResponse(
     @SerializedName("tag")          val tag: String? = null,
     @SerializedName("result")       val result: String? = null,

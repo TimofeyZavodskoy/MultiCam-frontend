@@ -19,8 +19,10 @@ import ru.hotdog.multicam.ui.screen.MainScreen
 import ru.hotdog.multicam.ui.screen.RegistrationScreen
 import ru.hotdog.multicam.ui.theme.MultiCamTheme
 
+// Запускает приложение и выбирает стартовый экран по состоянию авторизации.
 class MainActivity : ComponentActivity() {
 
+    // Инициализирует токены, тему и корневую навигацию приложения.
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,10 +40,7 @@ class MainActivity : ComponentActivity() {
             MultiCamTheme {
                 var loggedIn by remember { mutableStateOf(wasLoggedIn) }
 
-                /**
-                 * true — пользователь нажал «Регистрация» будучи гостем.
-                 * В этом случае токен НЕ очищаем: он нужен для вызова /auth/upgrade.
-                 */
+                // Хранит режим апгрейда гостя без очистки гостевого токена.
                 var upgradeMode by remember { mutableStateOf(false) }
 
                 if (loggedIn) {

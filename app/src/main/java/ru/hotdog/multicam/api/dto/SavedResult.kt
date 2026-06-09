@@ -2,11 +2,7 @@ package ru.hotdog.multicam.api.dto
 
 import com.google.gson.annotations.SerializedName
 
-/**
- * Зеркало SaveResultEntity с бекенда.
- * Используется при получении лайков (GET /api/save/likes/all)
- * и при сохранении (POST /api/save/like) для получения id.
- */
+// Описывает сохранённый на backend результат избранного.
 data class SavedResultDto(
     @SerializedName("id")        val id: Long,
     @SerializedName("imageUrl")  val imageUrl: String? = null,

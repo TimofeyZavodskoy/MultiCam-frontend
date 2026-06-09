@@ -25,6 +25,7 @@ import ru.hotdog.multicam.model.FavoriteItem
 import java.text.SimpleDateFormat
 import java.util.*
 
+// Рисует drawer избранного с вкладками, списком и деталями элемента.
 @Composable
 fun FavoritesDrawerContent(vm: ru.hotdog.multicam.ui.screen.FavoritesViewModel) {
     // Все вкладки строим из enum, чтобы drawer автоматически синхронизировался с категориями приложения.
@@ -144,6 +145,7 @@ fun FavoritesDrawerContent(vm: ru.hotdog.multicam.ui.screen.FavoritesViewModel) 
 // ── Favorite card ─────────────────────────────────────────────────────────────
 
 @Composable
+// Рисует карточку избранного с заголовком, временем и удалением.
 private fun FavoriteCard(
     item: FavoriteItem,
     onDelete: () -> Unit,
@@ -205,6 +207,7 @@ private fun FavoriteCard(
 // ── Detail dialog ─────────────────────────────────────────────────────────────
 
 @Composable
+// Показывает диалог с полным содержимым выбранного элемента.
 private fun FavoriteDetailDialog(item: FavoriteItem, onDismiss: () -> Unit) {
     // Диалог даёт более полный просмотр сохранённого ответа.
     Dialog(onDismissRequest = onDismiss) {
@@ -268,8 +271,7 @@ private fun FavoriteDetailDialog(item: FavoriteItem, onDismiss: () -> Unit) {
     }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
+// Форматирует timestamp в короткую относительную или календарную дату.
 private fun formatTimestamp(ts: Long): String {
     // Преобразуем raw timestamp в человекочитаемую дату "только что / N мин назад / dd.MM.yyyy".
     val diff = System.currentTimeMillis() - ts
