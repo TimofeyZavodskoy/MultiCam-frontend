@@ -49,7 +49,7 @@ object RetrofitClient {
 
     private val syncRetrofit by lazy {
         Retrofit.Builder()
-            .baseUrl("http://192.168.0.17:8080/")
+            .baseUrl("multicam-api-production.up.railway.app")
             .addConverterFactory(GsonConverterFactory.create())
             .client(OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
@@ -141,7 +141,7 @@ object RetrofitClient {
         .build()
 
     private val retrofit = Retrofit.Builder()
-        .baseUrl("http://192.168.0.17:8080/")
+        .baseUrl("multicam-api-production.up.railway.app")
         .addConverterFactory(ScalarsConverterFactory.create())
         .addConverterFactory(GsonConverterFactory.create())
         .client(httpClient)
