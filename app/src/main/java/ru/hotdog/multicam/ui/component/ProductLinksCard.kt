@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.hotdog.multicam.api.dto.SearchResult
 
+// Рисует карточку ссылок на маркетплейсы для найденного объекта.
 @Composable
 fun ProductLinksCard(
     objectLabel: String,
@@ -70,6 +71,7 @@ fun ProductLinksCard(
     }
 }
 
+// Рисует строку маркетплейса и открывает ссылку по нажатию.
 @Composable
 private fun MarketplaceRow(
     icon: String,

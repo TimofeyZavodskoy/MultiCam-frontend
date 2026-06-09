@@ -1,7 +1,6 @@
 package ru.hotdog.multicam.model
 
-// Центральная эвристика для выбора вкладки избранного.
-// Сначала доверяем явной метке от бэкенда, а если её нет — смотрим на текст ответа.
+// Определяет категорию избранного по метке, данным ответа и текстовым признакам.
 fun detectFavoriteCategory(
     text: String?,
     tag: String? = null,
@@ -33,8 +32,7 @@ fun detectFavoriteCategory(
     }
 }
 
-// Нормализует категорию уже сохранённого элемента.
-// Это нужно, чтобы старые записи можно было подтянуть в правильную вкладку после исправления эвристик.
+// Уточняет категорию сохранённого элемента по метке и тексту.
 fun normalizeFavoriteCategory(
     category: FavoriteCategory,
     text: String?,
@@ -54,8 +52,7 @@ fun normalizeFavoriteCategory(
     }
 }
 
-// Достаёт человекочитаемый заголовок из многострочного ответа.
-// Идея простая: убрать markdown-служебные строки и взять первую содержательную строку.
+// Строит короткий заголовок избранного из первой содержательной строки ответа.
 fun buildFavoriteTitleFromText(
     text: String?,
     fallback: String = "Ответ",
@@ -195,8 +192,7 @@ private fun looksLikePhysics(text: String): Boolean {
     return units.containsMatchIn(text)
 }
 
-// Последняя эвристика для чистой математики.
-// Любой текст с "=" и спецсимволами уходит сюда только если физика и химия уже не подошли.
+// Распознаёт математический текст по уравнениям и спецсимволам.
 private fun looksLikeMath(text: String): Boolean {
     return text.contains("=") ||
             text.contains("²") ||

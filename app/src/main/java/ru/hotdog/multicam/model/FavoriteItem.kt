@@ -1,5 +1,6 @@
 package ru.hotdog.multicam.model
 
+// Хранит типы избранных результатов и их подписи для UI.
 enum class FavoriteCategory(val displayName: String, val emoji: String) {
     FOOD("Еда", "🍽"),
     MATH("Математика", "🧮"),
@@ -10,6 +11,7 @@ enum class FavoriteCategory(val displayName: String, val emoji: String) {
     IMAGES("Изображения", "📸")
 }
 
+// Описывает сохранённый результат избранного в приложении.
 data class FavoriteItem(
     val id: String,
     val timestamp: Long,

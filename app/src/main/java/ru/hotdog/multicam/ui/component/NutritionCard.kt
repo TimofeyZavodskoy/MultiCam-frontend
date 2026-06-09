@@ -39,6 +39,7 @@ private val ProteinColor = Color(0xFF4FC3F7)
 private val FatColor     = Color(0xFFFFB74D)
 private val CarbColor    = Color(0xFF81C784)
 
+// Хранит калории и макронутриенты для карточки питания.
 data class NutritionData(
     val calories: Int,
     val proteins: Int,
@@ -46,6 +47,7 @@ data class NutritionData(
     val carbs: Int
 )
 
+// Рисует карточку питания с диаграммой, БЖУ и кнопкой избранного.
 @Composable
 fun NutritionCard(
     data: NutritionData,
@@ -69,7 +71,7 @@ fun NutritionCard(
     }
     val progress = animProgress.value
 
-    // Like button bounce animation
+    // Анимирует масштаб кнопки лайка при изменении состояния.
     val likeScale by animateFloatAsState(
         targetValue   = if (isLiked) 1.25f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
@@ -238,6 +240,7 @@ fun NutritionCard(
 }
 
 @Composable
+// Показывает компактный бейдж с количеством калорий.
 private fun CaloriesBadge(calories: Int) {
     Box(
         modifier = Modifier
@@ -255,6 +258,7 @@ private fun CaloriesBadge(calories: Int) {
 }
 
 @Composable
+// Рисует строку макронутриента с цветом, граммами и процентом.
 private fun MacroRow(color: Color, label: String, value: Int, percent: Int) {
     Row(
         verticalAlignment = Alignment.CenterVertically,

@@ -16,40 +16,48 @@ import retrofit2.converter.scalars.ScalarsConverterFactory
 import retrofit2.http.*
 import java.util.concurrent.TimeUnit
 
+// Описывает основные HTTP-методы backend API для Retrofit.
 interface BackendApi {
 
+    // Отправляет изображение на распознавание и получает результат анализа.
     @Multipart
     @POST("api/ocr/process")
     suspend fun processImage(
         @Part image: okhttp3.MultipartBody.Part
     ): ru.hotdog.multicam.api.dto.OCRResponse
 
+    // Сохраняет результат в избранное на сервере.
     @POST("api/save/like")
     suspend fun saveLike(@Body request: ru.hotdog.multicam.api.dto.SaveRequest): RetrofitResponse<ru.hotdog.multicam.api.dto.SavedResultDto>
 
+    // Удаляет сохранённый результат с сервера по id.
     @DELETE("api/save/like/{id}")
     suspend fun deleteLike(@Path("id") id: Long): RetrofitResponse<String>
 
+    // Загружает все сохранённые результаты пользователя.
     @GET("api/save/likes/all")
     suspend fun getLikes(): RetrofitResponse<List<ru.hotdog.multicam.api.dto.SavedResultDto>>
 }
 
-// Синхронный интерфейс только для Authenticator — используем Call.execute()
+// Выполняет синхронные auth-запросы внутри OkHttp Authenticator.
 interface SyncAuthApi {
+    // Синхронно обновляет пару токенов по refresh token.
     @POST("auth/refresh")
     fun refreshSync(@Body body: Map<String, String>): Call<ru.hotdog.multicam.api.dto.TokenPair>
 
+    // Синхронно создаёт новую гостевую пару токенов.
     @POST("auth/signup/guest")
     fun registerGuestSync(@Body request: ru.hotdog.multicam.api.dto.GuestRequest): Call<ru.hotdog.multicam.api.dto.TokenPair>
 }
 
+// Создаёт и настраивает Retrofit, OkHttp и авторизацию запросов.
 object RetrofitClient {
     var authToken: String? = null
     var appContext: Context? = null
 
     private val syncRetrofit by lazy {
         Retrofit.Builder()
-            .baseUrl("http://192.168.0.17:8080/")
+            .baseUrl("multicam-api-production.up.railway.app")
             .addConverterFactory(GsonConverterFactory.create())
             .client(OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
@@ -60,12 +68,9 @@ object RetrofitClient {
 
     private val syncAuthApi by lazy { syncRetrofit.create(_root_ide_package_.ru.hotdog.multicam.api.SyncAuthApi::class.java) }
 
-    /**
-     * Authenticator: при 401 пытаемся обновить access token через refresh token.
-     * Защита от бесконечного цикла: если запрос уже содержит Authorization
-     * и это уже повторная попытка (priorResponse != null) — сдаёмся.
-     */
+    // При 401 обновляет access token или завершает сессию без бесконечных повторов.
     private val tokenAuthenticator = object : Authenticator {
+        // Строит повторный запрос с новым токеном или отменяет авторизацию.
         override fun authenticate(route: Route?, response: Response): Request? {
             if (response.priorResponse != null) return null  // уже пробовали — сдаёмся
 
@@ -141,7 +146,7 @@ object RetrofitClient {
         .build()
 
     private val retrofit = Retrofit.Builder()
-        .baseUrl("http://192.168.0.17:8080/")
+        .baseUrl("multicam-api-production.up.railway.app")
         .addConverterFactory(ScalarsConverterFactory.create())
         .addConverterFactory(GsonConverterFactory.create())
         .client(httpClient)

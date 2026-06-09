@@ -15,13 +15,19 @@ import ru.hotdog.multicam.api.dto.RegisterRequest
 import ru.hotdog.multicam.api.dto.TokenPair
 import ru.hotdog.multicam.sevice.getDeviceUuid
 
+// Описывает состояние экрана авторизации.
 sealed class AuthState {
+    // Показывает, что авторизация ещё не выполняется.
     object Idle    : AuthState()
+    // Показывает, что auth-запрос сейчас выполняется.
     object Loading : AuthState()
+    // Показывает, что авторизация успешно завершена.
     object Success : AuthState()
+    // Хранит текст ошибки авторизации для UI.
     data class Error(val message: String) : AuthState()
 }
 
+// Управляет регистрацией, входом, гостевым режимом и апгрейдом аккаунта.
 class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences("auth", Context.MODE_PRIVATE)
@@ -29,6 +35,7 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
     var state by mutableStateOf<AuthState>(AuthState.Idle)
         private set
 
+    // Сохраняет токены и тип пользователя в память приложения и SharedPreferences.
     private fun persistTokens(pair: TokenPair, isGuest: Boolean) {
         RetrofitClient.authToken = pair.accessToken
         prefs.edit()
@@ -38,8 +45,7 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
             .apply()
     }
 
-    // ── Регистрация ───────────────────────────────────────────────────────────
-
+    // Регистрирует пользователя и сразу выполняет вход.
     fun register(username: String, email: String, password: String) {
         if (username.isBlank() || email.isBlank() || password.isBlank()) {
             state = AuthState.Error("Заполните все поля")
@@ -62,8 +68,7 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Вход ──────────────────────────────────────────────────────────────────
-
+    // Выполняет вход по email и паролю после проверки полей.
     fun login(email: String, password: String) {
         if (email.isBlank() || password.isBlank()) {
             state = AuthState.Error("Введите почту и пароль")
@@ -79,6 +84,7 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // Отправляет запрос входа и обновляет состояние по ответу backend.
     private suspend fun doLogin(email: String, password: String) {
         val resp = RetrofitClient.authApi.signin(LoginRequest(email, password))
         if (resp.isSuccessful) {
@@ -100,8 +106,7 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Гостевой вход ─────────────────────────────────────────────────────────
-
+    // Создаёт или восстанавливает гостевую сессию по UUID устройства.
     fun loginAsGuest(context: Context) {
         viewModelScope.launch {
             state = AuthState.Loading
@@ -125,8 +130,7 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Апгрейд гостя ─────────────────────────────────────────────────────────
-
+    // Апгрейдит гостевой аккаунт до постоянного пользователя.
     fun upgrade(username: String, email: String, password: String) {
         if (username.isBlank() || email.isBlank() || password.isBlank()) {
             state = AuthState.Error("Заполните все поля")
@@ -158,6 +162,8 @@ class RegistrationViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // Сбрасывает ошибку авторизации в idle-состояние.
     fun clearError() { if (state is AuthState.Error) state = AuthState.Idle }
+    // Возвращает состояние авторизации к начальному.
     fun reset()      { state = AuthState.Idle }
 }
